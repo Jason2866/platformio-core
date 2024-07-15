@@ -29,12 +29,12 @@ from platformio.project.config import ProjectConfig
 class PlatformBase(  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     PlatformPackagesMixin, PlatformRunMixin
 ):
-
     CORE_SEMVER = pepver_to_semver(__version__)
     _BOARDS_CACHE = {}
 
     def __init__(self, manifest_path):
         self.manifest_path = manifest_path
+        self.project_env = None  # set by factory.from_env(env)
         self.silent = False
         self.verbose = False
 
@@ -169,6 +169,7 @@ class PlatformBase(  # pylint: disable=too-many-instance-attributes,too-many-pub
         return self._BOARDS_CACHE[id_] if id_ else self._BOARDS_CACHE
 
     def board_config(self, id_):
+        assert id_
         return self.get_boards(id_)
 
     def get_package_type(self, name):
@@ -208,6 +209,15 @@ class PlatformBase(  # pylint: disable=too-many-instance-attributes,too-many-pub
     def configure_debug_session(self, debug_config):
         raise NotImplementedError
 
+    def generate_sample_code(self, project_config, environment):
+        raise NotImplementedError
+
+    def on_installed(self):
+        pass
+
+    def on_uninstalled(self):
+        pass
+
     def get_lib_storages(self):
         storages = {}
         for opts in (self.frameworks or {}).values():
@@ -228,9 +238,3 @@ class PlatformBase(  # pylint: disable=too-many-instance-attributes,too-many-pub
                 storages[libcore_dir] = "%s-core-%s" % (opts["package"], item)
 
         return [dict(name=name, path=path) for path, name in storages.items()]
-
-    def on_installed(self):
-        pass
-
-    def on_uninstalled(self):
-        pass

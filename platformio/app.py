@@ -18,6 +18,7 @@ import json
 import os
 import platform
 import socket
+import time
 import uuid
 
 from platformio import __version__, exception, fs, proc
@@ -68,7 +69,15 @@ SESSION_VARS = {
     "command_ctx": None,
     "caller_id": None,
     "custom_project_conf": None,
+    "pause_telemetry": False,
 }
+
+
+def resolve_state_path(conf_option_dir, file_name, ensure_dir_exists=True):
+    state_dir = ProjectConfig.get_instance().get("platformio", conf_option_dir)
+    if ensure_dir_exists and not os.path.isdir(state_dir):
+        os.makedirs(state_dir)
+    return os.path.join(state_dir, file_name)
 
 
 class State:
@@ -76,10 +85,7 @@ class State:
         self.path = path
         self.lock = lock
         if not self.path:
-            core_dir = ProjectConfig.get_instance().get("platformio", "core_dir")
-            if not os.path.isdir(core_dir):
-                os.makedirs(core_dir)
-            self.path = os.path.join(core_dir, "appstate.json")
+            self.path = resolve_state_path("core_dir", "appstate.json")
         self._storage = {}
         self._lockfile = None
         self.modified = False
@@ -248,7 +254,12 @@ def get_cid():
     cid = str(cid)
     if IS_WINDOWS or os.getuid() > 0:  # pylint: disable=no-member
         set_state_item("cid", cid)
+        set_state_item("created_at", int(time.time()))
     return cid
+
+
+def get_project_id(project_dir):
+    return hashlib.sha1(hashlib_encode_data(project_dir)).hexdigest()
 
 
 def get_user_agent():
@@ -263,6 +274,8 @@ def get_user_agent():
         data.append("IDE/%s" % os.getenv("PLATFORMIO_IDE"))
     data.append("Python/%s" % platform.python_version())
     data.append("Platform/%s" % platform.platform())
+    if not get_setting("enable_telemetry"):
+        data.append("Telemetry/0")
     return " ".join(data)
 
 

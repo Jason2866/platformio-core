@@ -69,7 +69,7 @@ class BuildAsyncPipe(AsyncPipeBase):
         print_immediately = False
 
         for char in iter(lambda: self._pipe_reader.read(1), ""):
-            self._buffer += char
+            # self._buffer += char
 
             if line and char.strip() and line[-3:] == (char * 3):
                 print_immediately = True
@@ -185,9 +185,16 @@ def copy_pythonpath_to_osenv():
 
 
 def where_is_program(program, envpath=None):
-    env = os.environ
+    env = os.environ.copy()
     if envpath:
         env["PATH"] = envpath
+
+    # look up in $PATH
+    for bin_dir in env.get("PATH", "").split(os.pathsep):
+        if os.path.isfile(os.path.join(bin_dir, program)):
+            return os.path.join(bin_dir, program)
+        if IS_WINDOWS and os.path.isfile(os.path.join(bin_dir, "%s.exe" % program)):
+            return os.path.join(bin_dir, "%s.exe" % program)
 
     # try OS's built-in commands
     try:
@@ -196,13 +203,6 @@ def where_is_program(program, envpath=None):
             return result["out"].strip()
     except OSError:
         pass
-
-    # look up in $PATH
-    for bin_dir in env.get("PATH", "").split(os.pathsep):
-        if os.path.isfile(os.path.join(bin_dir, program)):
-            return os.path.join(bin_dir, program)
-        if os.path.isfile(os.path.join(bin_dir, "%s.exe" % program)):
-            return os.path.join(bin_dir, "%s.exe" % program)
 
     return program
 

@@ -26,6 +26,7 @@ from SCons.Script import SConscript  # pylint: disable=import-error
 from platformio import __version__, fs
 from platformio.compat import IS_MACOS, string_types
 from platformio.package.version import pepver_to_semver
+from platformio.proc import where_is_program
 
 SRC_HEADER_EXT = ["h", "hpp"]
 SRC_ASM_EXT = ["S", "spp", "SPP", "sx", "s", "asm", "ASM"]
@@ -53,7 +54,7 @@ def GetBuildType(env):
         modes.append("debug")
     if "__test" in COMMAND_LINE_TARGETS or env.GetProjectOption("build_type") == "test":
         modes.append("test")
-    return "+".join(modes or ["release"])
+    return ", ".join(modes or ["release"])
 
 
 def BuildProgram(env):
@@ -125,12 +126,26 @@ def ProcessProgramDeps(env):
     # remove specified flags
     env.ProcessUnFlags(env.get("BUILD_UNFLAGS"))
 
-    if "compiledb" in COMMAND_LINE_TARGETS and env.get(
-        "COMPILATIONDB_INCLUDE_TOOLCHAIN"
-    ):
-        for scope, includes in env.DumpIntegrationIncludes().items():
-            if scope in ("toolchain",):
-                env.Append(CPPPATH=includes)
+    env.ProcessCompileDbToolchainOption()
+
+
+def ProcessCompileDbToolchainOption(env):
+    if "compiledb" in COMMAND_LINE_TARGETS:
+        # Resolve absolute path of toolchain
+        for cmd in ("CC", "CXX", "AS"):
+            if cmd not in env:
+                continue
+            if os.path.isabs(env[cmd]):
+                continue
+            env[cmd] = where_is_program(
+                env.subst("$%s" % cmd), env.subst("${ENV['PATH']}")
+            )
+
+        if env.get("COMPILATIONDB_INCLUDE_TOOLCHAIN"):
+            print("Warning! `COMPILATIONDB_INCLUDE_TOOLCHAIN` is scoping")
+            for scope, includes in env.DumpIntegrationIncludes().items():
+                if scope in ("toolchain",):
+                    env.Append(CPPPATH=includes)
 
 
 def ProcessProjectDeps(env):
@@ -200,13 +215,14 @@ def ParseFlagsExtended(env, flags):  # pylint: disable=too-many-branches
     # fix relative CPPPATH & LIBPATH
     for k in ("CPPPATH", "LIBPATH"):
         for i, p in enumerate(result.get(k, [])):
+            p = env.subst(p)
             if os.path.isdir(p):
                 result[k][i] = os.path.abspath(p)
 
     # fix relative path for "-include"
     for i, f in enumerate(result.get("CCFLAGS", [])):
         if isinstance(f, tuple) and f[0] == "-include":
-            result["CCFLAGS"][i] = (f[0], env.File(os.path.abspath(f[1].get_path())))
+            result["CCFLAGS"][i] = (f[0], env.subst(f[1].get_path()))
 
     return result
 
@@ -239,7 +255,7 @@ def ProcessUnFlags(env, flags):
     for scope in unflag_scopes:
         for unflags in parsed.values():
             for unflag in unflags:
-                for current in env.get(scope, []):
+                for current in list(env.get(scope, [])):
                     conditions = [
                         unflag == current,
                         not isinstance(unflag, (tuple, list))
@@ -365,6 +381,7 @@ def generate(env):
     env.AddMethod(GetBuildType)
     env.AddMethod(BuildProgram)
     env.AddMethod(ProcessProgramDeps)
+    env.AddMethod(ProcessCompileDbToolchainOption)
     env.AddMethod(ProcessProjectDeps)
     env.AddMethod(ParseFlagsExtended)
     env.AddMethod(ProcessFlags)

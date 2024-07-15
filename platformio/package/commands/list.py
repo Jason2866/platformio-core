@@ -22,6 +22,7 @@ from platformio.package.manager.library import LibraryPackageManager
 from platformio.package.manager.platform import PlatformPackageManager
 from platformio.package.manager.tool import ToolPackageManager
 from platformio.package.meta import PackageItem, PackageSpec
+from platformio.platform.exception import UnknownPlatform
 from platformio.platform.factory import PlatformFactory
 from platformio.project.config import ProjectConfig
 
@@ -31,7 +32,7 @@ from platformio.project.config import ProjectConfig
     "-d",
     "--project-dir",
     default=os.getcwd,
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
 )
 @click.option("-e", "--environment", "environments", multiple=True)
 @click.option("-p", "--platform", "platforms", metavar="SPECIFICATION", multiple=True)
@@ -41,7 +42,7 @@ from platformio.project.config import ProjectConfig
 @click.option(
     "--storage-dir",
     default=None,
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
     help="Custom Package Manager storage for global packages",
 )
 @click.option("--only-platforms", is_flag=True, help="List only platform packages")
@@ -59,7 +60,8 @@ def humanize_package(pkg, spec=None, verbose=False):
     if spec and not isinstance(spec, PackageSpec):
         spec = PackageSpec(spec)
     data = [
-        click.style("{name} @ {version}".format(**pkg.metadata.as_dict()), fg="cyan")
+        click.style(pkg.metadata.name, fg="cyan"),
+        click.style(f"@ {str(pkg.metadata.version)}", bold=True),
     ]
     extra_data = ["required: %s" % (spec.humanize() if spec else "Any")]
     if verbose:
@@ -84,10 +86,16 @@ def print_dependency_tree(pm, specs=None, filter_specs=None, level=0, verbose=Fa
     if not candidates:
         return
     candidates = sorted(candidates.values(), key=lambda item: item[0].metadata.name)
+
     for index, (pkg, spec) in enumerate(candidates):
         if filtered_pkgs and not _pkg_tree_contains(pm, pkg, filtered_pkgs):
             continue
-        dependencies = pm.get_pkg_dependencies(pkg)
+        printed_pkgs = pm.memcache_get("__printed_pkgs", [])
+        if printed_pkgs and pkg.path in printed_pkgs:
+            continue
+        printed_pkgs.append(pkg.path)
+        pm.memcache_set("__printed_pkgs", printed_pkgs)
+
         click.echo(
             "%s%s %s"
             % (
@@ -100,6 +108,8 @@ def print_dependency_tree(pm, specs=None, filter_specs=None, level=0, verbose=Fa
                 ),
             )
         )
+
+        dependencies = pm.get_pkg_dependencies(pkg)
         if dependencies:
             print_dependency_tree(
                 pm,
@@ -127,20 +137,20 @@ def list_global_packages(options):
         ("libraries", LibraryPackageManager(options.get("storage_dir"))),
     ]
     only_packages = any(
-        options.get(type_) or options.get(f"only_{type_}") for (type_, _) in data
+        options.get(typex) or options.get(f"only_{typex}") for (typex, _) in data
     )
-    for (type_, pm) in data:
+    for typex, pm in data:
         skip_conds = [
             only_packages
-            and not options.get(type_)
-            and not options.get(f"only_{type_}"),
+            and not options.get(typex)
+            and not options.get(f"only_{typex}"),
             not pm.get_installed(),
         ]
         if any(skip_conds):
             continue
-        click.secho(type_.capitalize(), bold=True)
+        click.secho(typex.capitalize(), bold=True)
         print_dependency_tree(
-            pm, filter_specs=options.get(type_), verbose=options.get("verbose")
+            pm, filter_specs=options.get(typex), verbose=options.get("verbose")
         )
         click.echo()
 
@@ -148,12 +158,12 @@ def list_global_packages(options):
 def list_project_packages(options):
     environments = options["environments"]
     only_packages = any(
-        options.get(type_) or options.get(f"only_{type_}")
-        for type_ in ("platforms", "tools", "libraries")
+        options.get(typex) or options.get(f"only_{typex}")
+        for typex in ("platforms", "tools", "libraries")
     )
     only_platform_packages = any(
-        options.get(type_) or options.get(f"only_{type_}")
-        for type_ in ("platforms", "tools")
+        options.get(typex) or options.get(f"only_{typex}")
+        for typex in ("platforms", "tools")
     )
     only_library_packages = options.get("libraries") or options.get("only_libraries")
 
@@ -178,20 +188,20 @@ def list_project_packages(options):
 
 
 def print_project_env_platform_packages(project_env, options):
-    config = ProjectConfig.get_instance()
-    platform = config.get(f"env:{project_env}", "platform")
-    if not platform:
-        return None
-    pkg = PlatformPackageManager().get_package(platform)
-    if not pkg:
+    try:
+        p = PlatformFactory.from_env(project_env)
+    except UnknownPlatform:
         return None
     click.echo(
         "Platform %s"
-        % (humanize_package(pkg, platform, verbose=options.get("verbose")))
+        % (
+            humanize_package(
+                PlatformPackageManager().get_package(p.get_dir()),
+                p.config.get(f"env:{project_env}", "platform"),
+                verbose=options.get("verbose"),
+            )
+        )
     )
-    p = PlatformFactory.new(pkg)
-    if project_env:
-        p.configure_project_packages(project_env)
     print_dependency_tree(
         p.pm,
         specs=[p.get_package_spec(name) for name in p.packages],

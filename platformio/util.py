@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import functools
 import math
 import platform
 import re
 import shutil
 import time
-from datetime import datetime
 
 import click
 
@@ -96,7 +96,6 @@ class RetryStopException(RetryException):
 
 
 class retry:
-
     RetryNextException = RetryNextException
     RetryStopException = RetryStopException
 
@@ -144,6 +143,8 @@ def get_systype():
             arch = "x86_" + platform.architecture()[0]
         if "x86" in arch:
             arch = "amd64" if "64" in arch else "x86"
+    if arch == "aarch64" and platform.architecture()[0] == "32bit":
+        arch = "armv7l"
     return "%s_%s" % (system, arch) if arch else system
 
 
@@ -169,9 +170,8 @@ def items_in_list(needle, haystack):
 
 
 def parse_datetime(datestr):
-    if "T" in datestr and "Z" in datestr:
-        return datetime.strptime(datestr, "%Y-%m-%dT%H:%M:%SZ")
-    return datetime.strptime(datestr)
+    assert "T" in datestr and "Z" in datestr
+    return datetime.datetime.strptime(datestr, "%Y-%m-%dT%H:%M:%SZ")
 
 
 def merge_dicts(d1, d2, path=None):

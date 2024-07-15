@@ -47,7 +47,7 @@ def validate_datetime(ctx, param, value):  # pylint: disable=unused-argument
     "package",
     default=os.getcwd,
     metavar="<source directory, tar.gz or zip>",
-    type=click.Path(exists=True, file_okay=True, dir_okay=True, resolve_path=True),
+    type=click.Path(exists=True, file_okay=True, dir_okay=True),
 )
 @click.option(
     "--owner",
@@ -56,7 +56,7 @@ def validate_datetime(ctx, param, value):  # pylint: disable=unused-argument
 )
 @click.option(
     "--type",
-    "type_",
+    "typex",
     type=click.Choice(list(PackageType.items().values())),
     help="Custom package type",
 )
@@ -83,9 +83,10 @@ def validate_datetime(ctx, param, value):  # pylint: disable=unused-argument
     hidden=True,
 )
 def package_publish_cmd(  # pylint: disable=too-many-arguments, too-many-locals
-    package, owner, type_, released_at, private, notify, no_interactive, non_interactive
+    package, owner, typex, released_at, private, notify, no_interactive, non_interactive
 ):
     click.secho("Preparing a package...", fg="cyan")
+    package = os.path.abspath(package)
     no_interactive = no_interactive or non_interactive
     owner = owner or AccountClient().get_logged_username()
     do_not_pack = (
@@ -103,14 +104,14 @@ def package_publish_cmd(  # pylint: disable=too-many-arguments, too-many-locals
                 p = PackagePacker(package)
                 archive_path = p.pack()
 
-        type_ = type_ or PackageType.from_archive(archive_path)
+        typex = typex or PackageType.from_archive(archive_path)
         manifest = ManifestSchema().load_manifest(
             ManifestParserFactory.new_from_archive(archive_path).as_dict()
         )
         name = manifest.get("name")
         version = manifest.get("version")
         data = [
-            ("Type:", type_),
+            ("Type:", typex),
             ("Owner:", owner),
             ("Name:", name),
             ("Version:", version),
@@ -124,13 +125,13 @@ def package_publish_cmd(  # pylint: disable=too-many-arguments, too-many-locals
         check_archive_file_names(archive_path)
 
         # look for duplicates
-        check_package_duplicates(owner, type_, name, version, manifest.get("system"))
+        check_package_duplicates(owner, typex, name, version, manifest.get("system"))
 
         if not no_interactive:
             click.confirm(
                 "Are you sure you want to publish the %s %s to the registry?\n"
                 % (
-                    type_,
+                    typex,
                     click.style(
                         "%s/%s@%s" % (owner, name, version),
                         fg="cyan",
@@ -146,7 +147,7 @@ def package_publish_cmd(  # pylint: disable=too-many-arguments, too-many-locals
         )
         click.echo("Publishing...")
         response = RegistryClient().publish_package(
-            owner, type_, archive_path, released_at, private, notify
+            owner, typex, archive_path, released_at, private, notify
         )
         if not do_not_pack:
             os.remove(archive_path)

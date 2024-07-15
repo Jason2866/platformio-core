@@ -13,10 +13,10 @@
 # limitations under the License.
 
 from platformio import util
-from platformio.exception import PlatformioException, UserSideException
+from platformio.exception import UserSideException
 
 
-class PackageException(PlatformioException):
+class PackageException(UserSideException):
     pass
 
 
@@ -48,20 +48,17 @@ class ManifestValidationError(ManifestException):
 
 
 class MissingPackageManifestError(ManifestException):
-
     MESSAGE = "Could not find one of '{0}' manifest files in the package"
 
 
-class UnknownPackageError(UserSideException):
-
+class UnknownPackageError(PackageException):
     MESSAGE = (
         "Could not find the package with '{0}' requirements for your system '%s'"
         % util.get_systype()
     )
 
 
-class NotGlobalLibDir(UserSideException):
-
+class NotGlobalLibDir(PackageException):
     MESSAGE = (
         "The `{0}` is not a PlatformIO project.\n\n"
         "To manage libraries in global storage `{1}`,\n"

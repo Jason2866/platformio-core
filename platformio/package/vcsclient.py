@@ -18,14 +18,10 @@ import subprocess
 from urllib.parse import urlparse
 
 from platformio import proc
-from platformio.package.exception import (
-    PackageException,
-    PlatformioException,
-    UserSideException,
-)
+from platformio.exception import UserSideException
 
 
-class VCSBaseException(PackageException):
+class VCSBaseException(UserSideException):
     pass
 
 
@@ -58,7 +54,6 @@ class VCSClientFactory:
 
 
 class VCSClientBase:
-
     command = None
 
     def __init__(self, src_dir, remote_url=None, tag=None, silent=False):
@@ -75,8 +70,8 @@ class VCSClientBase:
                 self.get_cmd_output(["--version"])
             else:
                 assert self.run_cmd(["--version"])
-        except (AssertionError, OSError, PlatformioException) as exc:
-            raise UserSideException(
+        except (AssertionError, OSError) as exc:
+            raise VCSBaseException(
                 "VCS: `%s` client is not installed in your system" % self.command
             ) from exc
         return True
@@ -128,7 +123,6 @@ class VCSClientBase:
 
 
 class GitClient(VCSClientBase):
-
     command = "git"
     _configured = False
 
@@ -236,7 +230,6 @@ class GitClient(VCSClientBase):
 
 
 class HgClient(VCSClientBase):
-
     command = "hg"
 
     def export(self):
@@ -260,7 +253,6 @@ class HgClient(VCSClientBase):
 
 
 class SvnClient(VCSClientBase):
-
     command = "svn"
 
     def export(self):

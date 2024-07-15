@@ -110,6 +110,12 @@ def new_terminal(options):
     term.raw = options["raw"]
     term.set_rx_encoding(options["encoding"])
     term.set_tx_encoding(options["encoding"])
+    for ts in (term.tx_transformations, term.rx_transformations):
+        for t in ts:
+            try:
+                t.set_running_terminal(term)
+            except AttributeError:
+                pass
     return term
 
 
@@ -144,9 +150,8 @@ def new_serial_instance(options):  # pylint: disable=too-many-branches
             except KeyboardInterrupt as exc:
                 click.echo("", err=True)
                 raise UserSideException("User aborted and port is not given") from exc
-            else:
-                if not port:
-                    raise UserSideException("Port is not given")
+            if not port:
+                raise UserSideException("Port is not given")
         try:
             serial_instance = serial.serial_for_url(
                 port,

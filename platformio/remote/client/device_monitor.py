@@ -71,7 +71,6 @@ class SMBridgeFactory(protocol.ServerFactory):
 class DeviceMonitorClient(  # pylint: disable=too-many-instance-attributes
     RemoteClientBase
 ):
-
     MAX_BUFFER_SIZE = 1024 * 1024
 
     def __init__(self, agents, **kwargs):
@@ -96,7 +95,7 @@ class DeviceMonitorClient(  # pylint: disable=too-many-instance-attributes
     def _cb_device_list(self, result):
         devices = []
         hwid_devindexes = []
-        for (success, value) in result:
+        for success, value in result:
             if not success:
                 click.secho(value, fg="red", err=True)
                 continue
@@ -124,9 +123,11 @@ class DeviceMonitorClient(  # pylint: disable=too-many-instance-attributes
                         index=i + 1,
                         host=device[0] + ":" if len(result) > 1 else "",
                         port=device[1]["port"],
-                        description=device[1]["description"]
-                        if device[1]["description"] != "n/a"
-                        else "",
+                        description=(
+                            device[1]["description"]
+                            if device[1]["description"] != "n/a"
+                            else ""
+                        ),
                     )
                 )
             device_index = click.prompt(

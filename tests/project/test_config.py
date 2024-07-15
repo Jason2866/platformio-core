@@ -23,13 +23,16 @@ import pytest
 
 from platformio import fs
 from platformio.project.config import ProjectConfig
-from platformio.project.exception import InvalidProjectConfError, UnknownEnvNamesError
+from platformio.project.exception import (
+    InvalidEnvNameError,
+    InvalidProjectConfError,
+    UnknownEnvNamesError,
+)
 
 BASE_CONFIG = """
 [platformio]
 env_default = base, extra_2
 src_dir = ${custom.src_dir}
-build_dir = ${custom.build_dir}
 extra_configs =
   extra_envs.ini
   extra_debug.ini
@@ -57,7 +60,6 @@ build_flags = -D RELEASE
 
 [custom]
 src_dir = source
-build_dir = ~/tmp/pio-$PROJECT_HASH
 debug_flags = -D RELEASE
 lib_flags = -lc -lm
 extra_flags = ${sysenv.__PIO_TEST_CNF_EXTRA_FLAGS}
@@ -205,9 +207,9 @@ def test_options(config):
     assert config.options(env="test_extends") == [
         "extends",
         "build_flags",
+        "monitor_speed",
         "lib_ldf_mode",
         "lib_compat_mode",
-        "monitor_speed",
         "custom_monitor_speed",
         "lib_deps",
         "lib_ignore",
@@ -245,9 +247,9 @@ def test_sysenv_options(config):
     assert config.options(env="test_extends") == [
         "extends",
         "build_flags",
+        "monitor_speed",
         "lib_ldf_mode",
         "lib_compat_mode",
-        "monitor_speed",
         "custom_monitor_speed",
         "lib_deps",
         "lib_ignore",
@@ -315,7 +317,6 @@ def test_getraw_value(config):
         config.getraw("custom", "debug_server")
         == f"\n{packages_dir}/tool-openocd/openocd\n--help"
     )
-    assert config.getraw("platformio", "build_dir") == "~/tmp/pio-$PROJECT_HASH"
 
     # renamed option
     assert config.getraw("env:extra_1", "lib_install") == "574"
@@ -356,7 +357,6 @@ def test_get_value(config):
     assert config.get("platformio", "src_dir") == os.path.abspath(
         os.path.join(os.getcwd(), "source")
     )
-    assert "$PROJECT_HASH" not in config.get("platformio", "build_dir")
 
     # renamed option
     assert config.get("env:extra_1", "lib_install") == ["574"]
@@ -367,7 +367,6 @@ def test_get_value(config):
 def test_items(config):
     assert config.items("custom") == [
         ("src_dir", "source"),
-        ("build_dir", "~/tmp/pio-$PROJECT_HASH"),
         ("debug_flags", "-D DEBUG=1"),
         ("lib_flags", "-lc -lm"),
         ("extra_flags", ""),
@@ -427,9 +426,9 @@ def test_items(config):
     assert config.items(env="test_extends") == [
         ("extends", ["strict_settings"]),
         ("build_flags", ["-D RELEASE"]),
+        ("monitor_speed", 115200),
         ("lib_ldf_mode", "chain+"),
         ("lib_compat_mode", "strict"),
-        ("monitor_speed", 115200),
         ("custom_monitor_speed", "115200"),
         ("lib_deps", ["Lib1", "Lib2"]),
         ("lib_ignore", ["LibIgnoreCustom"]),
@@ -521,7 +520,6 @@ def test_dump(tmpdir_factory):
             [
                 ("env_default", ["base", "extra_2"]),
                 ("src_dir", "${custom.src_dir}"),
-                ("build_dir", "${custom.build_dir}"),
                 ("extra_configs", ["extra_envs.ini", "extra_debug.ini"]),
             ],
         ),
@@ -545,7 +543,6 @@ def test_dump(tmpdir_factory):
             "custom",
             [
                 ("src_dir", "source"),
-                ("build_dir", "~/tmp/pio-$PROJECT_HASH"),
                 ("debug_flags", "-D RELEASE"),
                 ("lib_flags", "-lc -lm"),
                 ("extra_flags", "${sysenv.__PIO_TEST_CNF_EXTRA_FLAGS}"),
@@ -627,23 +624,132 @@ custom_option = ${this.board}
     assert config.get("env:myenv", "build_flags") == ["-Dmyenv"]
 
 
+def test_project_name(tmp_path: Path):
+    project_dir = tmp_path / "my-project-name"
+    project_dir.mkdir()
+    project_conf = project_dir / "platformio.ini"
+    project_conf.write_text(
+        """
+[env:myenv]
+    """
+    )
+    with fs.cd(str(project_dir)):
+        config = ProjectConfig(str(project_conf))
+        assert config.get("platformio", "name") == "my-project-name"
+
+    # custom name
+    project_conf.write_text(
+        """
+[platformio]
+name = custom-project-name
+    """
+    )
+    config = ProjectConfig(str(project_conf))
+    assert config.get("platformio", "name") == "custom-project-name"
+
+
 def test_nested_interpolation(tmp_path: Path):
     project_conf = tmp_path / "platformio.ini"
     project_conf.write_text(
         """
 [platformio]
-build_dir = ~/tmp/pio-$PROJECT_HASH
+build_dir = /tmp/pio-$PROJECT_HASH
+data_dir = $PROJECT_DIR/assets
 
 [env:myenv]
+build_flags =
+    -D UTIME=${UNIX_TIME}
+    -I ${PROJECTSRC_DIR}/hal
+    -Wl,-Map,${BUILD_DIR}/${PROGNAME}.map
 test_testing_command =
     ${platformio.packages_dir}/tool-simavr/bin/simavr
      -m
      atmega328p
      -f
      16000000L
+     ${UPLOAD_PORT and "-p "+UPLOAD_PORT}
      ${platformio.build_dir}/${this.__env__}/firmware.elf
     """
     )
     config = ProjectConfig(str(project_conf))
+    assert config.get("platformio", "data_dir").endswith(
+        os.path.join("$PROJECT_DIR", "assets")
+    )
+    assert config.get("env:myenv", "build_flags")[0][-10:].isdigit()
+    assert config.get("env:myenv", "build_flags")[1] == "-I ${PROJECTSRC_DIR}/hal"
+    assert (
+        config.get("env:myenv", "build_flags")[2]
+        == "-Wl,-Map,${BUILD_DIR}/${PROGNAME}.map"
+    )
     testing_command = config.get("env:myenv", "test_testing_command")
-    assert "$" not in " ".join(testing_command)
+    assert "$" not in testing_command[0]
+    assert testing_command[5] == '${UPLOAD_PORT and "-p "+UPLOAD_PORT}'
+
+
+def test_extends_order(tmp_path: Path):
+    project_conf = tmp_path / "platformio.ini"
+    project_conf.write_text(
+        """
+[a]
+board = test
+
+[b]
+upload_tool = two
+
+[c]
+upload_tool = three
+
+[env:na_ti-ve13]
+extends = a, b, c
+    """
+    )
+    config = ProjectConfig(str(project_conf))
+    assert config.get("env:na_ti-ve13", "upload_tool") == "three"
+
+
+def test_invalid_env_names(tmp_path: Path):
+    project_conf = tmp_path / "platformio.ini"
+    project_conf.write_text(
+        """
+[env:app:1]
+    """
+    )
+    config = ProjectConfig(str(project_conf))
+    with pytest.raises(InvalidEnvNameError, match=r".*Invalid environment name 'app:1"):
+        config.validate()
+
+
+def test_linting_errors(tmp_path: Path):
+    project_conf = tmp_path / "platformio.ini"
+    project_conf.write_text(
+        """
+[env:app1]
+lib_use = 1
+broken_line
+    """
+    )
+    result = ProjectConfig.lint(str(project_conf))
+    assert not result["warnings"]
+    assert result["errors"] and len(result["errors"]) == 1
+    error = result["errors"][0]
+    assert error["type"] == "ParsingError"
+    assert error["lineno"] == 4
+
+
+def test_linting_warnings(tmp_path: Path):
+    project_conf = tmp_path / "platformio.ini"
+    project_conf.write_text(
+        """
+[platformio]
+build_dir = /tmp/pio-$PROJECT_HASH
+
+[env:app1]
+lib_use = 1
+test_testing_command = /usr/bin/flash-tool -p $UPLOAD_PORT -b $UPLOAD_SPEED
+    """
+    )
+    result = ProjectConfig.lint(str(project_conf))
+    assert not result["errors"]
+    assert result["warnings"] and len(result["warnings"]) == 2
+    assert "deprecated" in result["warnings"][0]
+    assert "Invalid variable declaration" in result["warnings"][1]

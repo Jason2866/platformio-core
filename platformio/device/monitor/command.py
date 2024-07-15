@@ -58,7 +58,7 @@ from platformio.project.options import ProjectOptions
     "--encoding",
     help=(
         "Set the encoding for the serial port "
-        "(e.g. hexlify, Latin1, UTF-8) [default=%s]"
+        "(e.g. hexlify, Latin-1, UTF-8) [default=%s]"
         % ProjectOptions["env.monitor_encoding"].default
     ),
 )
@@ -104,7 +104,7 @@ from platformio.project.options import ProjectOptions
     "-d",
     "--project-dir",
     default=os.getcwd,
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
 )
 @click.option(
     "-e",
@@ -125,31 +125,33 @@ def device_monitor_cmd(**options):
         options = apply_project_monitor_options(options, project_options)
         register_filters(platform=platform, options=options)
         options["port"] = SerialPortFinder(
-            board_config=platform.board_config(project_options.get("board"))
-            if platform and project_options.get("board")
-            else None,
+            board_config=(
+                platform.board_config(project_options.get("board"))
+                if platform and project_options.get("board")
+                else None
+            ),
             upload_protocol=project_options.get("upload_protocol"),
             ensure_ready=True,
         ).find(initial_port=options["port"])
 
-    if options["menu_char"] == options["exit_char"]:
-        raise exception.UserSideException(
-            "--exit-char can not be the same as --menu-char"
-        )
-
-    # check for unknown filters
-    if options["filters"]:
-        known_filters = set(get_available_filters())
-        unknown_filters = set(options["filters"]) - known_filters
-        if unknown_filters:
-            options["filters"] = list(known_filters & set(options["filters"]))
-            click.secho(
-                ("Warning! Skipping unknown filters `%s`. Known filters are `%s`")
-                % (", ".join(unknown_filters), ", ".join(sorted(known_filters))),
-                fg="yellow",
+        if options["menu_char"] == options["exit_char"]:
+            raise exception.UserSideException(
+                "--exit-char can not be the same as --menu-char"
             )
 
-    start_terminal(options)
+        # check for unknown filters
+        if options["filters"]:
+            known_filters = set(get_available_filters())
+            unknown_filters = set(options["filters"]) - known_filters
+            if unknown_filters:
+                options["filters"] = list(known_filters & set(options["filters"]))
+                click.secho(
+                    ("Warning! Skipping unknown filters `%s`. Known filters are `%s`")
+                    % (", ".join(unknown_filters), ", ".join(sorted(known_filters))),
+                    fg="yellow",
+                )
+
+        start_terminal(options)
 
 
 def get_project_options(environment=None):

@@ -19,7 +19,6 @@ import click
 
 
 class PlatformioCLI(click.MultiCommand):
-
     leftover_args = []
 
     def __init__(self, *args, **kwargs):
@@ -63,6 +62,21 @@ class PlatformioCLI(click.MultiCommand):
                 "--version" in args,
             ]
         )
+
+    @classmethod
+    def reveal_cmd_path_args(cls, ctx):
+        result = []
+        group = ctx.command
+        args = cls.leftover_args[::]
+        while args:
+            cmd_name = args.pop(0)
+            next_group = group.get_command(ctx, cmd_name)
+            if next_group:
+                group = next_group
+                result.append(cmd_name)
+            if not hasattr(group, "get_command"):
+                break
+        return result
 
     def invoke(self, ctx):
         PlatformioCLI.leftover_args = ctx.args

@@ -13,21 +13,21 @@
 # limitations under the License.
 
 import json
-import os
 import socket
 from urllib.parse import urljoin
 
 import requests.adapters
-from requests.packages.urllib3.util.retry import Retry  # pylint:disable=import-error
+from urllib3.util.retry import Retry
 
 from platformio import __check_internet_hosts__, app, util
 from platformio.cache import ContentCache, cleanup_content_cache
+from platformio.compat import is_proxy_set
 from platformio.exception import PlatformioException, UserSideException
 
 __default_requests_timeout__ = (10, None)  # (connect, read)
 
 
-class HTTPClientError(PlatformioException):
+class HTTPClientError(UserSideException):
     def __init__(self, message, response=None):
         super().__init__()
         self.message = message
@@ -37,8 +37,7 @@ class HTTPClientError(PlatformioException):
         return self.message
 
 
-class InternetIsOffline(UserSideException):
-
+class InternetConnectionError(UserSideException):
     MESSAGE = (
         "You are not connected to the Internet.\n"
         "PlatformIO needs the Internet connection to"
@@ -51,7 +50,10 @@ class HTTPSession(requests.Session):
         self._x_base_url = kwargs.pop("x_base_url") if "x_base_url" in kwargs else None
         super().__init__(*args, **kwargs)
         self.headers.update({"User-Agent": app.get_user_agent()})
-        self.verify = app.get_setting("enable_proxy_strict_ssl")
+        try:
+            self.verify = app.get_setting("enable_proxy_strict_ssl")
+        except PlatformioException:
+            self.verify = True
 
     def request(  # pylint: disable=signature-differs,arguments-differ
         self, method, url, *args, **kwargs
@@ -61,9 +63,11 @@ class HTTPSession(requests.Session):
             kwargs["timeout"] = __default_requests_timeout__
         return super().request(
             method,
-            url
-            if url.startswith("http") or not self._x_base_url
-            else urljoin(self._x_base_url, url),
+            (
+                url
+                if url.startswith("http") or not self._x_base_url
+                else urljoin(self._x_base_url, url)
+            ),
             *args,
             **kwargs
         )
@@ -155,7 +159,10 @@ class HTTPClient:
         with ContentCache("http") as cc:
             result = cc.get(cache_key)
             if result is not None:
-                return json.loads(result)
+                try:
+                    return json.loads(result)
+                except json.JSONDecodeError:
+                    pass
             response = self.send_request(method, path, **kwargs)
             data = self._parse_json_response(response)
             cc.set(cache_key, response.text, cache_valid)
@@ -186,9 +193,7 @@ def _internet_on():
     socket.setdefaulttimeout(timeout)
     for host in __check_internet_hosts__:
         try:
-            for var in ("HTTP_PROXY", "HTTPS_PROXY"):
-                if not os.getenv(var) and not os.getenv(var.lower()):
-                    continue
+            if is_proxy_set():
                 requests.get("http://%s" % host, allow_redirects=False, timeout=timeout)
                 return True
             # try to resolve `host` for both AF_INET and AF_INET6, and then try to connect
@@ -204,7 +209,7 @@ def _internet_on():
 def ensure_internet_on(raise_exception=False):
     result = _internet_on()
     if raise_exception and not result:
-        raise InternetIsOffline()
+        raise InternetConnectionError()
     return result
 
 

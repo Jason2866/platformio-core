@@ -12,20 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from platformio.exception import PlatformioException
+from platformio.exception import UserSideException
 
 
-class PlatformException(PlatformioException):
+class PlatformException(UserSideException):
     pass
 
 
 class UnknownPlatform(PlatformException):
-
     MESSAGE = "Unknown development platform '{0}'"
 
 
 class IncompatiblePlatform(PlatformException):
-
     MESSAGE = (
         "Development platform '{0}' is not compatible with PlatformIO Core v{1} and "
         "depends on PlatformIO Core {2}.\n"
@@ -33,20 +31,16 @@ class IncompatiblePlatform(PlatformException):
 
 
 class UnknownBoard(PlatformException):
-
     MESSAGE = "Unknown board ID '{0}'"
 
 
 class InvalidBoardManifest(PlatformException):
-
     MESSAGE = "Invalid board JSON manifest '{0}'"
 
 
 class UnknownFramework(PlatformException):
-
     MESSAGE = "Unknown framework '{0}'"
 
 
 class BuildScriptNotFound(PlatformException):
-
     MESSAGE = "Invalid path '{0}' to build script"

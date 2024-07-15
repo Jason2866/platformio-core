@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import re
 import subprocess
 from hashlib import sha1
 
@@ -24,7 +25,7 @@ from platformio.project.config import ProjectConfig
 
 
 def get_project_dir():
-    return fs.normalize_path(os.getcwd())
+    return os.getcwd()
 
 
 def is_platformio_project(project_dir=None):
@@ -94,7 +95,16 @@ def compute_project_checksum(config):
     checksum = sha1(hashlib_encode_data(__version__))
 
     # configuration file state
-    checksum.update(hashlib_encode_data(config.to_json()))
+    config_data = config.to_json()
+    if IS_WINDOWS:
+        # issue #4600: fix drive letter
+        config_data = re.sub(
+            r"([A-Z]):\\",
+            lambda match: "%s:\\" % match.group(1).lower(),
+            config_data,
+            flags=re.I,
+        )
+    checksum.update(hashlib_encode_data(config_data))
 
     # project file structure
     check_suffixes = (".c", ".cc", ".cpp", ".h", ".hpp", ".s", ".S")
@@ -121,27 +131,27 @@ def compute_project_checksum(config):
     return checksum.hexdigest()
 
 
-def load_build_metadata(project_dir, env_or_envs, cache=False, debug=False):
+def load_build_metadata(project_dir, env_or_envs, cache=False, build_type=None):
     assert env_or_envs
     env_names = env_or_envs
     if not isinstance(env_names, list):
         env_names = [env_names]
 
     with fs.cd(project_dir):
-        result = _get_cached_build_metadata(project_dir, env_names) if cache else {}
+        result = _get_cached_build_metadata(env_names) if cache else {}
         # incompatible build-type data
-        for name in list(result.keys()):
-            build_type = result[name].get("build_type", "")
-            outdated_conds = [
-                not build_type,
-                debug and "debug" not in build_type,
-                not debug and "debug" in build_type,
-            ]
-            if any(outdated_conds):
-                del result[name]
+        for env_name in list(result.keys()):
+            if build_type is None:
+                build_type = ProjectConfig.get_instance().get(
+                    f"env:{env_name}", "build_type"
+                )
+            if result[env_name].get("build_type", "") != build_type:
+                del result[env_name]
         missed_env_names = set(env_names) - set(result.keys())
         if missed_env_names:
-            result.update(_load_build_metadata(project_dir, missed_env_names, debug))
+            result.update(
+                _load_build_metadata(project_dir, missed_env_names, build_type)
+            )
 
     if not isinstance(env_or_envs, list) and env_or_envs in result:
         return result[env_or_envs]
@@ -152,32 +162,37 @@ def load_build_metadata(project_dir, env_or_envs, cache=False, debug=False):
 load_project_ide_data = load_build_metadata
 
 
-def _load_build_metadata(project_dir, env_names, debug=False):
+def _load_build_metadata(project_dir, env_names, build_type=None):
     # pylint: disable=import-outside-toplevel
+    from platformio import app
     from platformio.run.cli import cli as cmd_run
 
     args = ["--project-dir", project_dir, "--target", "__idedata"]
-    if debug:
+    if build_type == "debug":
         args.extend(["--target", "__debug"])
+    # if build_type == "test":
+    #     args.extend(["--target", "__test"])
     for name in env_names:
         args.extend(["-e", name])
+    app.set_session_var("pause_telemetry", True)
     result = CliRunner().invoke(cmd_run, args)
+    app.set_session_var("pause_telemetry", False)
     if result.exit_code != 0 and not isinstance(
         result.exception, exception.ReturnErrorCode
     ):
         raise result.exception
     if '"includes":' not in result.output:
-        raise exception.PlatformioException(result.output)
-    return _get_cached_build_metadata(project_dir, env_names)
+        raise exception.UserSideException(result.output)
+    return _get_cached_build_metadata(env_names)
 
 
-def _get_cached_build_metadata(project_dir, env_names):
-    build_dir = ProjectConfig.get_instance(
-        os.path.join(project_dir, "platformio.ini")
-    ).get("platformio", "build_dir")
+def _get_cached_build_metadata(env_names):
+    build_dir = ProjectConfig.get_instance().get("platformio", "build_dir")
     result = {}
-    for name in env_names:
-        if not os.path.isfile(os.path.join(build_dir, name, "idedata.json")):
+    for env_name in env_names:
+        if not os.path.isfile(os.path.join(build_dir, env_name, "idedata.json")):
             continue
-        result[name] = fs.load_json(os.path.join(build_dir, name, "idedata.json"))
+        result[env_name] = fs.load_json(
+            os.path.join(build_dir, env_name, "idedata.json")
+        )
     return result

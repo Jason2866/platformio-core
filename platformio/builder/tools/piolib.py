@@ -29,7 +29,7 @@ from SCons.Script import DefaultEnvironment  # pylint: disable=import-error
 from platformio import exception, fs
 from platformio.builder.tools import piobuild
 from platformio.compat import IS_WINDOWS, hashlib_encode_data, string_types
-from platformio.http import HTTPClientError, InternetIsOffline
+from platformio.http import HTTPClientError, InternetConnectionError
 from platformio.package.exception import (
     MissingPackageManifestError,
     UnknownPackageError,
@@ -39,7 +39,7 @@ from platformio.package.manifest.parser import (
     ManifestParserError,
     ManifestParserFactory,
 )
-from platformio.package.meta import PackageCompatibility, PackageItem
+from platformio.package.meta import PackageCompatibility, PackageItem, PackageSpec
 from platformio.project.options import ProjectOptions
 
 
@@ -109,7 +109,6 @@ class LibBuilderFactory:
 
 
 class LibBuilderBase:
-
     CLASSIC_SCANNER = SCons.Scanner.C.CScanner()
     CCONDITIONAL_SCANNER = SCons.Scanner.C.CConditionalScanner()
     # Max depth of nested includes:
@@ -298,21 +297,22 @@ class LibBuilderBase:
         with fs.cd(self.path):
             self.env.ProcessFlags(self.build_flags)
             if self.extra_script:
-                self.env.SConscriptChdir(1)
+                self.env.SConscriptChdir(True)
                 self.env.SConscript(
                     os.path.abspath(self.extra_script),
                     exports={"env": self.env, "pio_lib_builder": self},
                 )
+                self.env.SConscriptChdir(False)
             self.env.ProcessUnFlags(self.build_unflags)
 
     def process_dependencies(self):
         if not self.dependencies or self._deps_are_processed:
             return
         self._deps_are_processed = True
-        for item in self.dependencies:
+        for dependency in self.dependencies:
             found = False
             for lb in self.env.GetLibBuilders():
-                if item["name"] != lb.name:
+                if not lb.is_dependency_compatible(dependency):
                     continue
                 found = True
                 if lb not in self.depbuilders:
@@ -322,8 +322,27 @@ class LibBuilderBase:
             if not found and self.verbose:
                 sys.stderr.write(
                     "Warning: Ignored `%s` dependency for `%s` "
-                    "library\n" % (item["name"], self.name)
+                    "library\n" % (dependency["name"], self.name)
                 )
+
+    def is_dependency_compatible(self, dependency):
+        pkg = PackageItem(self.path)
+        qualifiers = {"name": self.name, "version": self.version}
+        if pkg.metadata:
+            qualifiers = {"name": pkg.metadata.name, "version": pkg.metadata.version}
+            if pkg.metadata.spec and pkg.metadata.spec.owner:
+                qualifiers["owner"] = pkg.metadata.spec.owner
+        dep_qualifiers = {
+            k: v for k, v in dependency.items() if k in ("owner", "name", "version")
+        }
+        if (
+            "version" in dep_qualifiers
+            and not PackageSpec(dep_qualifiers["version"]).requirements
+        ):
+            del dep_qualifiers["version"]
+        return PackageCompatibility.from_dependency(dep_qualifiers).is_compatible(
+            PackageCompatibility(**qualifiers)
+        )
 
     def get_search_files(self):
         return [
@@ -477,6 +496,7 @@ class LibBuilderBase:
         self.is_built = True
 
         self.env.PrependUnique(CPPPATH=self.get_include_dirs())
+        self.env.ProcessCompileDbToolchainOption()
 
         if self.lib_ldf_mode == "off":
             for lb in self.env.GetLibBuilders():
@@ -791,7 +811,9 @@ class PlatformIOLibBuilder(LibBuilderBase):
             include_dirs.append(os.path.join(self.path, "utility"))
 
         for path in self.env.get("CPPPATH", []):
-            if path not in self.envorigin.get("CPPPATH", []):
+            if path not in include_dirs and path not in self.envorigin.get(
+                "CPPPATH", []
+            ):
                 include_dirs.append(self.env.subst(path))
 
         return include_dirs
@@ -982,7 +1004,11 @@ class ProjectAsLibBuilder(LibBuilderBase):
             try:
                 lm.install(spec)
                 did_install = True
-            except (HTTPClientError, UnknownPackageError, InternetIsOffline) as exc:
+            except (
+                HTTPClientError,
+                UnknownPackageError,
+                InternetConnectionError,
+            ) as exc:
                 click.secho("Warning! %s" % exc, fg="yellow")
 
         # reset cache
@@ -1157,7 +1183,7 @@ def ConfigureProjectLibBuilder(env):
                 click.echo("Path: %s" % lb.path, nl=False)
                 click.echo(")", nl=False)
             click.echo("")
-            if lb.depbuilders:
+            if lb.verbose and lb.depbuilders:
                 _print_deps_tree(lb, level + 1)
 
     project = ProjectAsLibBuilder(env, "$PROJECT_DIR")

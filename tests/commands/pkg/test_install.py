@@ -19,6 +19,7 @@ import os
 import pytest
 
 from platformio import fs
+from platformio.dependencies import get_core_dependencies
 from platformio.package.commands.install import package_install_cmd
 from platformio.package.manager.library import LibraryPackageManager
 from platformio.package.manager.platform import PlatformPackageManager
@@ -148,7 +149,7 @@ def test_skip_dependencies(
             ),
             PackageSpec("ESPAsyncWebServer-esphome@2.1.0"),
         ]
-        assert len(ToolPackageManager().get_installed()) == 0
+        assert len(ToolPackageManager().get_installed()) == 1  # SCons
 
 
 def test_baremetal_project(
@@ -177,6 +178,7 @@ def test_baremetal_project(
             ),
         ]
         assert pkgs_to_specs(ToolPackageManager().get_installed()) == [
+            PackageSpec("tool-scons@%s" % get_core_dependencies()["tool-scons"][1:]),
             PackageSpec("toolchain-atmelavr@1.70300.191015"),
         ]
 
@@ -209,6 +211,7 @@ def test_project(
         ]
         assert pkgs_to_specs(ToolPackageManager().get_installed()) == [
             PackageSpec("framework-arduino-avr-attiny@1.5.2"),
+            PackageSpec("tool-scons@%s" % get_core_dependencies()["tool-scons"][1:]),
             PackageSpec("toolchain-atmelavr@1.70300.191015"),
         ]
         assert config.get("env:devkit", "lib_deps") == [
@@ -443,7 +446,7 @@ def test_custom_project_libraries(
         )
         assert pkgs_to_specs(lm.get_installed()) == [
             PackageSpec("ArduinoJson@5.13.4"),
-            PackageSpec("Nanopb@0.4.7"),
+            PackageSpec("Nanopb@0.4.8"),
         ]
         assert config.get("env:devkit", "lib_deps") == [
             "bblanchon/ArduinoJson@^5",
@@ -469,7 +472,7 @@ def test_custom_project_tools(
     project_dir = tmp_path / "project"
     project_dir.mkdir()
     (project_dir / "platformio.ini").write_text(PROJECT_CONFIG_TPL)
-    spec = "platformio/tool-openocd"
+    spec = "platformio/tool-openocd @ ^2"
     result = clirunner.invoke(
         package_install_cmd,
         ["-d", str(project_dir), "-e", "devkit", "-t", spec],
@@ -503,7 +506,7 @@ def test_custom_project_tools(
 
         # check saved deps
         assert config.get("env:devkit", "platform_packages") == [
-            "platformio/tool-openocd@^2.1100.211028",
+            "platformio/tool-openocd@^2",
         ]
 
         # install tool without saving to config
@@ -518,7 +521,7 @@ def test_custom_project_tools(
             PackageSpec("tool-openocd@2.1100.211028"),
         ]
         assert config.get("env:devkit", "platform_packages") == [
-            "platformio/tool-openocd@^2.1100.211028",
+            "platformio/tool-openocd@^2",
         ]
 
         # unknown tool

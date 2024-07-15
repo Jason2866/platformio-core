@@ -24,7 +24,7 @@ import semantic_version
 from platformio import fs
 from platformio.compat import get_object_members, hashlib_encode_data, string_types
 from platformio.package.manifest.parser import ManifestFileType
-from platformio.package.version import cast_version_to_semver
+from platformio.package.version import SemanticVersionError, cast_version_to_semver
 from platformio.util import items_in_list
 
 
@@ -65,8 +65,14 @@ class PackageType:
 
 
 class PackageCompatibility:
-
-    KNOWN_QUALIFIERS = ("platforms", "frameworks", "authors")
+    KNOWN_QUALIFIERS = (
+        "owner",
+        "name",
+        "version",
+        "platforms",
+        "frameworks",
+        "authors",
+    )
 
     @classmethod
     def from_dependency(cls, dependency):
@@ -90,18 +96,44 @@ class PackageCompatibility:
     def __repr__(self):
         return "PackageCompatibility <%s>" % self.qualifiers
 
-    def to_search_qualifiers(self):
-        return self.qualifiers
+    def to_search_qualifiers(self, fields=None):
+        result = {}
+        for name, value in self.qualifiers.items():
+            if not fields or name in fields:
+                result[name] = value
+        return result
 
     def is_compatible(self, other):
         assert isinstance(other, PackageCompatibility)
-        for key, value in self.qualifiers.items():
+        for key, current_value in self.qualifiers.items():
             other_value = other.qualifiers.get(key)
-            if not value or not other_value:
+            if not current_value or not other_value:
                 continue
-            if not items_in_list(value, other_value):
+            if any(isinstance(v, list) for v in (current_value, other_value)):
+                if not items_in_list(current_value, other_value):
+                    return False
+                continue
+            if key == "version":
+                if not self._compare_versions(current_value, other_value):
+                    return False
+                continue
+            if current_value != other_value:
                 return False
         return True
+
+    def _compare_versions(self, current, other):
+        if current == other:
+            return True
+        try:
+            version = (
+                other
+                if isinstance(other, semantic_version.Version)
+                else cast_version_to_semver(other)
+            )
+            return version in semantic_version.SimpleSpec(current)
+        except ValueError:
+            pass
+        return False
 
 
 class PackageOutdatedResult:
@@ -176,7 +208,7 @@ class PackageSpec:  # pylint: disable=too-many-instance-attributes
         if requirements:
             try:
                 self.requirements = requirements
-            except ValueError as exc:
+            except SemanticVersionError as exc:
                 if not self.name or self.uri or self.raw:
                     raise exc
                 self.raw = "%s=%s" % (self.name, requirements)
@@ -225,11 +257,14 @@ class PackageSpec:  # pylint: disable=too-many-instance-attributes
         if not value:
             self._requirements = None
             return
-        self._requirements = (
-            value
-            if isinstance(value, semantic_version.SimpleSpec)
-            else semantic_version.SimpleSpec(str(value))
-        )
+        try:
+            self._requirements = (
+                value
+                if isinstance(value, semantic_version.SimpleSpec)
+                else semantic_version.SimpleSpec(str(value))
+            )
+        except ValueError as exc:
+            raise SemanticVersionError(exc) from exc
 
     def humanize(self):
         result = ""
@@ -399,7 +434,7 @@ class PackageSpec:  # pylint: disable=too-many-instance-attributes
         return name
 
 
-class PackageMetaData:
+class PackageMetadata:
     def __init__(  # pylint: disable=redefined-builtin
         self, type, name, version, spec=None
     ):
@@ -414,7 +449,7 @@ class PackageMetaData:
 
     def __repr__(self):
         return (
-            "PackageMetaData <type={type} name={name} version={version} "
+            "PackageMetadata <type={type} name={name} version={version} "
             "spec={spec}".format(**self.as_dict())
         )
 
@@ -464,11 +499,10 @@ class PackageMetaData:
                 data["spec"]["uri"] = data["spec"]["url"]
                 del data["spec"]["url"]
             data["spec"] = PackageSpec(**data["spec"])
-        return PackageMetaData(**data)
+        return PackageMetadata(**data)
 
 
 class PackageItem:
-
     METAFILE_NAME = ".piopm"
 
     def __init__(self, path, metadata=None):
@@ -484,9 +518,11 @@ class PackageItem:
 
     def __eq__(self, other):
         conds = [
-            os.path.realpath(self.path) == os.path.realpath(other.path)
-            if self.path and other.path
-            else self.path == other.path,
+            (
+                os.path.realpath(self.path) == os.path.realpath(other.path)
+                if self.path and other.path
+                else self.path == other.path
+            ),
             self.metadata == other.metadata,
         ]
         return all(conds)
@@ -514,7 +550,7 @@ class PackageItem:
         for location in self.get_metafile_locations():
             manifest_path = os.path.join(location, self.METAFILE_NAME)
             if os.path.isfile(manifest_path):
-                return PackageMetaData.load(manifest_path)
+                return PackageMetadata.load(manifest_path)
         return None
 
     def dump_meta(self):

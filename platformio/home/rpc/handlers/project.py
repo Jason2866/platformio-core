@@ -15,13 +15,17 @@
 import os
 import shutil
 import time
+from pathlib import Path
 
+import semantic_version
 from ajsonrpc.core import JSONRPC20DispatchException
 
-from platformio import exception, fs
+from platformio import app, exception, fs
 from platformio.home.rpc.handlers.app import AppRPC
+from platformio.home.rpc.handlers.base import BaseRPCHandler
 from platformio.home.rpc.handlers.piocore import PIOCoreRPC
 from platformio.package.manager.platform import PlatformPackageManager
+from platformio.platform.factory import PlatformFactory
 from platformio.project.config import ProjectConfig
 from platformio.project.exception import ProjectError
 from platformio.project.helpers import get_project_dir, is_platformio_project
@@ -29,14 +33,18 @@ from platformio.project.integration.generator import ProjectGenerator
 from platformio.project.options import get_config_options_schema
 
 
-class ProjectRPC:
+class ProjectRPC(BaseRPCHandler):
     @staticmethod
     def config_call(init_kwargs, method, *args):
         assert isinstance(init_kwargs, dict)
         assert "path" in init_kwargs
-        project_dir = get_project_dir()
-        if os.path.isfile(init_kwargs["path"]):
+        if os.path.isdir(init_kwargs["path"]):
+            project_dir = init_kwargs["path"]
+            init_kwargs["path"] = os.path.join(init_kwargs["path"], "platformio.ini")
+        elif os.path.isfile(init_kwargs["path"]):
             project_dir = os.path.dirname(init_kwargs["path"])
+        else:
+            project_dir = get_project_dir()
         with fs.cd(project_dir):
             return getattr(ProjectConfig(**init_kwargs), method)(*args)
 
@@ -184,83 +192,17 @@ class ProjectRPC:
 
     async def init(self, board, framework, project_dir):
         assert project_dir
-        state = AppRPC.load_state()
         if not os.path.isdir(project_dir):
             os.makedirs(project_dir)
-        args = ["init", "--board", board]
+        args = ["init", "--board", board, "--sample-code"]
         if framework:
             args.extend(["--project-option", "framework = %s" % framework])
-        if (
-            state["storage"]["coreCaller"]
-            and state["storage"]["coreCaller"] in ProjectGenerator.get_supported_ides()
-        ):
-            args.extend(["--ide", state["storage"]["coreCaller"]])
+        ide = app.get_session_var("caller_id")
+        if ide in ProjectGenerator.get_supported_ides():
+            args.extend(["--ide", ide])
         await PIOCoreRPC.call(
             args, options={"cwd": project_dir, "force_subprocess": True}
         )
-        return self._generate_project_main(project_dir, board, framework)
-
-    @staticmethod
-    def _generate_project_main(project_dir, board, framework):
-        main_content = None
-        if framework == "arduino":
-            main_content = "\n".join(
-                [
-                    "#include <Arduino.h>",
-                    "",
-                    "void setup() {",
-                    "  // put your setup code here, to run once:",
-                    "}",
-                    "",
-                    "void loop() {",
-                    "  // put your main code here, to run repeatedly:",
-                    "}",
-                    "",
-                ]
-            )
-        elif framework == "mbed":
-            main_content = "\n".join(
-                [
-                    "#include <mbed.h>",
-                    "",
-                    "int main() {",
-                    "",
-                    "  // put your setup code here, to run once:",
-                    "",
-                    "  while(1) {",
-                    "    // put your main code here, to run repeatedly:",
-                    "  }",
-                    "}",
-                    "",
-                ]
-            )
-        if not main_content:
-            return project_dir
-
-        is_cpp_project = True
-        pm = PlatformPackageManager()
-        try:
-            board = pm.board_config(board)
-            platforms = board.get("platforms", board.get("platform"))
-            if not isinstance(platforms, list):
-                platforms = [platforms]
-            c_based_platforms = ["intel_mcs51", "ststm8"]
-            is_cpp_project = not set(platforms) & set(c_based_platforms)
-        except exception.PlatformioException:
-            pass
-
-        with fs.cd(project_dir):
-            config = ProjectConfig()
-            src_dir = config.get("platformio", "src_dir")
-            main_path = os.path.join(
-                src_dir, "main.%s" % ("cpp" if is_cpp_project else "c")
-            )
-            if os.path.isfile(main_path):
-                return project_dir
-            if not os.path.isdir(src_dir):
-                os.makedirs(src_dir)
-            with open(main_path, mode="w", encoding="utf8") as fp:
-                fp.write(main_content.strip())
         return project_dir
 
     @staticmethod
@@ -296,11 +238,9 @@ class ProjectRPC:
             args.extend(
                 ["--project-option", "lib_extra_dirs = ~/Documents/Arduino/libraries"]
             )
-        if (
-            state["storage"]["coreCaller"]
-            and state["storage"]["coreCaller"] in ProjectGenerator.get_supported_ides()
-        ):
-            args.extend(["--ide", state["storage"]["coreCaller"]])
+        ide = app.get_session_var("caller_id")
+        if ide in ProjectGenerator.get_supported_ides():
+            args.extend(["--ide", ide])
         await PIOCoreRPC.call(
             args, options={"cwd": project_dir, "force_subprocess": True}
         )
@@ -324,14 +264,127 @@ class ProjectRPC:
         )
         shutil.copytree(project_dir, new_project_dir, symlinks=True)
 
-        state = AppRPC.load_state()
         args = ["init"]
-        if (
-            state["storage"]["coreCaller"]
-            and state["storage"]["coreCaller"] in ProjectGenerator.get_supported_ides()
-        ):
-            args.extend(["--ide", state["storage"]["coreCaller"]])
+        ide = app.get_session_var("caller_id")
+        if ide in ProjectGenerator.get_supported_ides():
+            args.extend(["--ide", ide])
         await PIOCoreRPC.call(
             args, options={"cwd": new_project_dir, "force_subprocess": True}
         )
         return new_project_dir
+
+    async def init_v2(self, configuration, options=None):
+        project_dir = os.path.join(configuration["location"], configuration["name"])
+        if not os.path.isdir(project_dir):
+            os.makedirs(project_dir)
+
+        envclone = os.environ.copy()
+        envclone["PLATFORMIO_FORCE_ANSI"] = "true"
+        options = options or {}
+        options["spawn"] = {"env": envclone, "cwd": project_dir}
+
+        args = ["project", "init"]
+        ide = app.get_session_var("caller_id")
+        if ide in ProjectGenerator.get_supported_ides():
+            args.extend(["--ide", ide])
+
+        if configuration.get("example"):
+            await self.factory.notify_clients(
+                method=options.get("stdoutNotificationMethod"),
+                params=["Copying example files...\n"],
+                actor="frontend",
+            )
+            await self._pre_init_example(configuration, project_dir)
+        else:
+            args.extend(self._pre_init_empty(configuration))
+
+        return await self.factory.manager.dispatcher["core.exec"](args, options=options)
+
+    @staticmethod
+    def _pre_init_empty(configuration):
+        project_options = []
+        platform = configuration["platform"]
+        board_id = configuration.get("board", {}).get("id")
+        env_name = board_id or platform["name"]
+        if configuration.get("description"):
+            project_options.append(("description", configuration.get("description")))
+        try:
+            v = semantic_version.Version(platform.get("version"))
+            assert not v.prerelease
+            project_options.append(
+                ("platform", "{name} @ ^{version}".format(**platform))
+            )
+        except (AssertionError, ValueError):
+            project_options.append(
+                ("platform", "{name} @ {version}".format(**platform))
+            )
+        if board_id:
+            project_options.append(("board", board_id))
+        if configuration.get("framework"):
+            project_options.append(("framework", configuration["framework"]["name"]))
+
+        args = ["-e", env_name, "--sample-code"]
+        for name, value in project_options:
+            args.extend(["-O", f"{name}={value}"])
+        return args
+
+    async def _pre_init_example(self, configuration, project_dir):
+        for item in configuration["example"]["files"]:
+            p = Path(project_dir).joinpath(item["path"])
+            if not p.parent.is_dir():
+                p.parent.mkdir(parents=True)
+            p.write_text(
+                await self.factory.manager.dispatcher["os.request_content"](
+                    item["url"]
+                ),
+                encoding="utf-8",
+            )
+        return []
+
+    @staticmethod
+    def configuration(project_dir, env):
+        assert is_platformio_project(project_dir)
+        with fs.cd(project_dir):
+            config = ProjectConfig(os.path.join(project_dir, "platformio.ini"))
+            platform = PlatformFactory.from_env(env, autoinstall=True)
+            platform_pkg = PlatformPackageManager().get_package(platform.get_dir())
+            board_id = config.get(f"env:{env}", "board", None)
+
+            # frameworks
+            frameworks = []
+            for name in config.get(f"env:{env}", "framework", []):
+                if name not in platform.frameworks:
+                    continue
+                f_pkg_name = platform.frameworks[name].get("package")
+                if not f_pkg_name:
+                    continue
+                f_pkg = platform.get_package(f_pkg_name)
+                if not f_pkg:
+                    continue
+                f_manifest = platform.pm.load_manifest(f_pkg)
+                frameworks.append(
+                    dict(
+                        name=name,
+                        title=f_manifest.get("title"),
+                        version=str(f_pkg.metadata.version),
+                    )
+                )
+
+            return dict(
+                platform=dict(
+                    ownername=(
+                        platform_pkg.metadata.spec.owner
+                        if platform_pkg.metadata.spec
+                        else None
+                    ),
+                    name=platform.name,
+                    title=platform.title,
+                    version=str(platform_pkg.metadata.version),
+                ),
+                board=(
+                    platform.board_config(board_id).get_brief_data()
+                    if board_id
+                    else None
+                ),
+                frameworks=frameworks or None,
+            )

@@ -22,6 +22,14 @@ def test_generic_build(clirunner, validate_cliresult, tmpdir):
         ("-D TEST_INT=13", "-DTEST_INT=13"),
         ("-DTEST_SINGLE_MACRO", "-DTEST_SINGLE_MACRO"),
         ('-DTEST_STR_SPACE="Andrew Smith"', '"-DTEST_STR_SPACE=Andrew Smith"'),
+        ("-Iinclude", "-Iinclude"),
+        ("-include cpppath-include.h", "cpppath-include.h"),
+        ("-Iextra_inc", "-Iextra_inc"),
+        ("-Inon-existing-dir", "non-existing-dir"),
+        (
+            "-include $PROJECT_DIR/lib/component/component-forced-include.h",
+            "component-forced-include.h",
+        ),
     ]
 
     tmpdir.join("platformio.ini").write(
@@ -58,8 +66,20 @@ projenv.Append(CPPDEFINES="POST_SCRIPT_MACRO")
     """
     )
 
+    tmpdir.mkdir("extra_inc").join("foo.h").write(
+        """
+#define FOO
+    """
+    )
+
     tmpdir.mkdir("src").join("main.cpp").write(
         """
+#include "foo.h"
+
+#ifndef FOO
+#error "FOO"
+#endif
+
 #ifdef I_AM_ONLY_SRC_FLAG
 #include <component.h>
 #else
@@ -82,12 +102,26 @@ projenv.Append(CPPDEFINES="POST_SCRIPT_MACRO")
 #error "POST_SCRIPT_MACRO"
 #endif
 
+#ifndef I_AM_FORCED_COMPONENT_INCLUDE
+#error "I_AM_FORCED_COMPONENT_INCLUDE"
+#endif
+
+#ifndef I_AM_FORCED_CPPPATH_INCLUDE
+#error "I_AM_FORCED_CPPPATH_INCLUDE"
+#endif
+
 #ifdef COMMENTED_MACRO
 #error "COMMENTED_MACRO"
 #endif
 
 int main() {
 }
+"""
+    )
+
+    tmpdir.mkdir("include").join("cpppath-include.h").write(
+        """
+#define I_AM_FORCED_CPPPATH_INCLUDE
 """
     )
     component_dir = tmpdir.mkdir("lib").mkdir("component")
@@ -109,6 +143,11 @@ void dummy(void);
 #endif
 
 void dummy(void ) {};
+    """
+    )
+    component_dir.join("component-forced-include.h").write(
+        """
+#define I_AM_FORCED_COMPONENT_INCLUDE
     """
     )
 

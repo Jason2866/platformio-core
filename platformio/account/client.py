@@ -16,27 +16,23 @@ import os
 import time
 
 from platformio import __accounts_api__, app
-from platformio.exception import PlatformioException
+from platformio.exception import PlatformioException, UserSideException
 from platformio.http import HTTPClient, HTTPClientError
 
 
 class AccountError(PlatformioException):
-
     MESSAGE = "{0}"
 
 
-class AccountNotAuthorized(AccountError):
-
+class AccountNotAuthorized(AccountError, UserSideException):
     MESSAGE = "You are not authorized! Please log in to PlatformIO Account."
 
 
-class AccountAlreadyAuthorized(AccountError):
-
+class AccountAlreadyAuthorized(AccountError, UserSideException):
     MESSAGE = "You are already authorized with {0} account."
 
 
 class AccountClient(HTTPClient):  # pylint:disable=too-many-public-methods
-
     SUMMARY_CACHE_TTL = 60 * 60 * 24 * 7
 
     def __init__(self):
@@ -298,7 +294,7 @@ class AccountClient(HTTPClient):  # pylint:disable=too-many-public-methods
         return self.fetch_json_data(
             "delete",
             "/v1/orgs/%s/owners" % orgname,
-            data={"username": username},
+            params={"username": username},
             x_with_authorization=True,
         )
 
@@ -351,6 +347,6 @@ class AccountClient(HTTPClient):  # pylint:disable=too-many-public-methods
         return self.fetch_json_data(
             "delete",
             "/v1/orgs/%s/teams/%s/members" % (orgname, teamname),
-            data={"username": username},
+            params={"username": username},
             x_with_authorization=True,
         )

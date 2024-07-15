@@ -14,14 +14,16 @@
 
 import configparser
 import glob
+import hashlib
 import json
 import os
 import re
+import time
 
 import click
 
 from platformio import fs
-from platformio.compat import MISSING, string_types
+from platformio.compat import MISSING, hashlib_encode_data, string_types
 from platformio.project import exception
 from platformio.project.options import ProjectOptions
 
@@ -39,9 +41,19 @@ CONFIG_HEADER = """
 
 
 class ProjectConfigBase:
-
+    ENVNAME_RE = re.compile(r"^[a-z\d\_\-]+$", flags=re.I)
     INLINE_COMMENT_RE = re.compile(r"\s+;.*$")
-    VARTPL_RE = re.compile(r"\$\{([^\.\}\()]+)\.([^\}]+)\}")
+    VARTPL_RE = re.compile(r"\$\{(?:([^\.\}\()]+)\.)?([^\}]+)\}")
+
+    BUILTIN_VARS = {
+        "PROJECT_DIR": lambda: os.getcwd(),  # pylint: disable=unnecessary-lambda
+        "PROJECT_HASH": lambda: "%s-%s"
+        % (
+            os.path.basename(os.getcwd()),
+            hashlib.sha1(hashlib_encode_data(os.getcwd())).hexdigest()[:10],
+        ),
+        "UNIX_TIME": lambda: str(int(time.time())),
+    }
 
     CUSTOM_OPTION_PREFIXES = ("custom_", "board_")
 
@@ -86,7 +98,7 @@ class ProjectConfigBase:
         if path and os.path.isfile(path):
             self.read(path, parse_extra)
 
-        self._maintain_renaimed_options()
+        self._maintain_renamed_options()
 
     def __getattr__(self, name):
         return getattr(self._parser, name)
@@ -98,7 +110,7 @@ class ProjectConfigBase:
         try:
             self._parser.read(path, "utf-8")
         except configparser.Error as exc:
-            raise exception.InvalidProjectConfError(path, str(exc))
+            raise exception.InvalidProjectConfError(path, str(exc)) from exc
 
         if not parse_extra:
             return
@@ -110,7 +122,7 @@ class ProjectConfigBase:
             for item in glob.glob(pattern, recursive=True):
                 self.read(item)
 
-    def _maintain_renaimed_options(self):
+    def _maintain_renamed_options(self):
         renamed_options = {}
         for option in ProjectOptions.values():
             if option.oldnames:
@@ -152,6 +164,7 @@ class ProjectConfigBase:
 
     @staticmethod
     def get_section_scope(section):
+        assert section
         return section.split(":", 1)[0] if ":" in section else section
 
     def walk_options(self, root_section):
@@ -168,7 +181,7 @@ class ProjectConfigBase:
                 yield (section, option)
             if self._parser.has_option(section, "extends"):
                 extends_queue.extend(
-                    self.parse_multi_values(self._parser.get(section, "extends"))[::-1]
+                    self.parse_multi_values(self._parser.get(section, "extends"))
                 )
 
     def options(self, section=None, env=None):
@@ -274,7 +287,7 @@ class ProjectConfigBase:
                 value = (
                     default if default != MISSING else self._parser.get(section, option)
                 )
-            return self._expand_interpolations(section, value)
+            return self._expand_interpolations(section, option, value)
 
         if option_meta.sysenvvar:
             envvar_value = os.getenv(option_meta.sysenvvar)
@@ -297,36 +310,69 @@ class ProjectConfigBase:
         if value == MISSING:
             return None
 
-        return self._expand_interpolations(section, value)
+        return self._expand_interpolations(section, option, value)
 
-    def _expand_interpolations(self, parent_section, value):
-        if (
-            not value
-            or not isinstance(value, string_types)
-            or not all(["${" in value, "}" in value])
-        ):
+    def _expand_interpolations(self, section, option, value):
+        if not value or not isinstance(value, string_types) or not "$" in value:
+            return value
+
+        # legacy support for variables delclared without "${}"
+        legacy_vars = ["PROJECT_HASH"]
+        stop = False
+        while not stop:
+            stop = True
+            for name in legacy_vars:
+                x = value.find(f"${name}")
+                if x < 0 or value[x - 1] == "$":
+                    continue
+                value = "%s${%s}%s" % (value[:x], name, value[x + len(name) + 1 :])
+                stop = False
+                warn_msg = (
+                    "Invalid variable declaration. Please use "
+                    f"`${{{name}}}` instead of `${name}`"
+                )
+                if warn_msg not in self.warnings:
+                    self.warnings.append(warn_msg)
+
+        if not all(["${" in value, "}" in value]):
             return value
         return self.VARTPL_RE.sub(
-            lambda match: self._re_interpolation_handler(parent_section, match), value
+            lambda match: self._re_interpolation_handler(section, option, match), value
         )
 
-    def _re_interpolation_handler(self, parent_section, match):
+    def _re_interpolation_handler(self, parent_section, parent_option, match):
         section, option = match.group(1), match.group(2)
+
+        # handle built-in variables
+        if section is None:
+            if option in self.BUILTIN_VARS:
+                return self.BUILTIN_VARS[option]()
+            # SCons varaibles
+            return f"${{{option}}}"
+
         # handle system environment variables
         if section == "sysenv":
             return os.getenv(option)
+
         # handle ${this.*}
         if section == "this":
             section = parent_section
             if option == "__env__":
-                assert parent_section.startswith("env:")
+                if not parent_section.startswith("env:"):
+                    raise exception.ProjectOptionValueError(
+                        f"`${{this.__env__}}` is called from the `{parent_section}` "
+                        "section that is not valid PlatformIO environment. Please "
+                        f"check `{parent_option}` option in the `{section}` section"
+                    )
                 return parent_section[4:]
+
         # handle nested calls
         try:
             value = self.get(section, option)
         except RecursionError as exc:
             raise exception.ProjectOptionValueError(
-                "Infinite recursion has been detected", option, section
+                f"Infinite recursion has been detected for `{option}` "
+                f"option in the `{section}` section"
             ) from exc
         if isinstance(value, list):
             return "\n".join(value)
@@ -353,7 +399,8 @@ class ProjectConfigBase:
             if not self.expand_interpolations:
                 return value
             raise exception.ProjectOptionValueError(
-                exc.format_message(), option, section
+                "%s for `%s` option in the `%s` section (%s)"
+                % (exc.format_message(), option, section, option_meta.description)
             )
 
     @staticmethod
@@ -383,17 +430,74 @@ class ProjectConfigBase:
     def validate(self, envs=None, silent=False):
         if not os.path.isfile(self.path):
             raise exception.NotPlatformIOProjectError(os.path.dirname(self.path))
+
+        known_envs = set(self.envs())
+
         # check envs
-        known = set(self.envs())
-        if not known:
+        if not known_envs:
             raise exception.ProjectEnvsNotAvailableError()
-        unknown = set(list(envs or []) + self.default_envs()) - known
-        if unknown:
-            raise exception.UnknownEnvNamesError(", ".join(unknown), ", ".join(known))
+        unknown_envs = set(list(envs or []) + self.default_envs()) - known_envs
+        if unknown_envs:
+            raise exception.UnknownEnvNamesError(
+                ", ".join(unknown_envs), ", ".join(known_envs)
+            )
+
+        for env in known_envs:
+            # check envs names
+            if not self.ENVNAME_RE.match(env):
+                raise exception.InvalidEnvNameError(env)
+
+            # check simultaneous use of `monitor_raw` and `monitor_filters`
+            if self.get(f"env:{env}", "monitor_raw", False) and self.get(
+                f"env:{env}", "monitor_filters", None
+            ):
+                self.warnings.append(
+                    "The `monitor_raw` and `monitor_filters` options cannot be "
+                    f"used simultaneously for the `{env}` environment in the "
+                    "`platformio.ini` file. The `monitor_filters` option will "
+                    "be disabled to avoid conflicts."
+                )
+
         if not silent:
             for warning in self.warnings:
                 click.secho("Warning! %s" % warning, fg="yellow")
+
         return True
+
+
+class ProjectConfigLintMixin:
+    @classmethod
+    def lint(cls, path=None):
+        errors = []
+        warnings = []
+        try:
+            config = cls.get_instance(path)
+            config.validate(silent=True)
+            warnings = config.warnings  # in case "as_tuple" fails
+            config.as_tuple()
+            warnings = config.warnings
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            if exc.__cause__ is not None:
+                exc = exc.__cause__
+
+            item = {"type": exc.__class__.__name__, "message": str(exc)}
+            for attr in ("lineno", "source"):
+                if hasattr(exc, attr):
+                    item[attr] = getattr(exc, attr)
+
+            if item["type"] == "ParsingError" and hasattr(exc, "errors"):
+                for lineno, line in getattr(exc, "errors"):
+                    errors.append(
+                        {
+                            "type": item["type"],
+                            "message": f"Parsing error: {line}",
+                            "lineno": lineno,
+                            "source": item["source"],
+                        }
+                    )
+            else:
+                errors.append(item)
+        return {"errors": errors, "warnings": warnings}
 
 
 class ProjectConfigDirsMixin:
@@ -401,12 +505,12 @@ class ProjectConfigDirsMixin:
         """
         Deprecated, used by platformio-node-helpers.project.observer.fetchLibDirs
         PlatformIO IDE for Atom depends on platformio-node-helpers@~7.2.0
+        PIO Home 3.0 Project Inspection depends on it
         """
         return self.get("platformio", f"{name}_dir")
 
 
-class ProjectConfig(ProjectConfigBase, ProjectConfigDirsMixin):
-
+class ProjectConfig(ProjectConfigBase, ProjectConfigLintMixin, ProjectConfigDirsMixin):
     _instances = {}
 
     @staticmethod

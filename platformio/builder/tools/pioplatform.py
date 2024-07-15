@@ -33,9 +33,7 @@ from platformio.project.config import ProjectOptions
 @util.memoized()
 def _PioPlatform():
     env = DefaultEnvironment()
-    p = PlatformFactory.new(os.path.dirname(env["PLATFORM_MANIFEST"]))
-    p.configure_project_packages(env["PIOENV"], COMMAND_LINE_TARGETS)
-    return p
+    return PlatformFactory.from_env(env["PIOENV"], targets=COMMAND_LINE_TARGETS)
 
 
 def PioPlatform(_):
@@ -77,9 +75,11 @@ def LoadPioPlatform(env):
             continue
         env.PrependENVPath(
             "PATH",
-            os.path.join(pkg.path, "bin")
-            if os.path.isdir(os.path.join(pkg.path, "bin"))
-            else pkg.path,
+            (
+                os.path.join(pkg.path, "bin")
+                if os.path.isdir(os.path.join(pkg.path, "bin"))
+                else pkg.path
+            ),
         )
         if (
             not IS_WINDOWS

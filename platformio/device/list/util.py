@@ -82,7 +82,15 @@ def list_logical_devices():
 
 
 def list_mdns_services():
-    import zeroconf  # pylint: disable=import-outside-toplevel
+    try:
+        import zeroconf  # pylint: disable=import-outside-toplevel
+    except ImportError:
+        result = proc.exec_command(
+            [proc.get_pythonexe_path(), "-m", "pip", "install", "zeroconf"]
+        )
+        if result.get("returncode") != 0:
+            print(result.get("err"))
+        import zeroconf  # pylint: disable=import-outside-toplevel
 
     class mDNSListener:
         def __init__(self):
@@ -136,9 +144,9 @@ def list_mdns_services():
             if service.properties:
                 try:
                     properties = {
-                        k.decode("utf8"): v.decode("utf8")
-                        if isinstance(v, bytes)
-                        else v
+                        k.decode("utf8"): (
+                            v.decode("utf8") if isinstance(v, bytes) else v
+                        )
                         for k, v in service.properties.items()
                     }
                     json.dumps(properties)

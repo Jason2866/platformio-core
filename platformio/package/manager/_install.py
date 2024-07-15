@@ -27,7 +27,6 @@ from platformio.package.vcsclient import VCSClientFactory
 
 
 class PackageManagerInstallMixin:
-
     _INSTALL_HISTORY = None  # avoid circle dependencies
 
     @staticmethod
@@ -99,9 +98,13 @@ class PackageManagerInstallMixin:
         else:
             pkg = self.install_from_registry(
                 spec,
-                search_qualifiers=compatibility.to_search_qualifiers()
-                if compatibility
-                else None,
+                search_qualifiers=(
+                    compatibility.to_search_qualifiers(
+                        ["platforms", "frameworks", "authors"]
+                    )
+                    if compatibility
+                    else None
+                ),
             )
 
         if not pkg or not pkg.metadata:

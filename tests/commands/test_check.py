@@ -15,8 +15,8 @@
 # pylint: disable=redefined-outer-name
 
 import json
+import os
 import sys
-from os.path import isfile, join
 
 import pytest
 
@@ -69,7 +69,7 @@ PVS_STUDIO_FREE_LICENSE_HEADER = """
 
 EXPECTED_ERRORS = 5
 EXPECTED_WARNINGS = 1
-EXPECTED_STYLE = 2
+EXPECTED_STYLE = 4
 EXPECTED_DEFECTS = EXPECTED_ERRORS + EXPECTED_WARNINGS + EXPECTED_STYLE
 
 
@@ -83,12 +83,12 @@ def check_dir(tmpdir_factory):
 
 def count_defects(output):
     error, warning, style = 0, 0, 0
-    for l in output.split("\n"):
-        if "[high:error]" in l:
+    for line in output.split("\n"):
+        if "[high:error]" in line:
             error += 1
-        elif "[medium:warning]" in l:
+        elif "[medium:warning]" in line:
             warning += 1
-        elif "[low:style]" in l:
+        elif "[low:style]" in line:
             style += 1
     return error, warning, style
 
@@ -240,9 +240,9 @@ def test_check_includes_passed(clirunner, check_dir):
     result = clirunner.invoke(cmd_check, ["--project-dir", str(check_dir), "--verbose"])
 
     inc_count = 0
-    for l in result.output.split("\n"):
-        if l.startswith("Includes:"):
-            inc_count = l.count("-I")
+    for line in result.output.split("\n"):
+        if line.startswith("Includes:"):
+            inc_count = line.count("-I")
 
     # at least 1 include path for default mode
     assert inc_count > 0
@@ -257,46 +257,6 @@ def test_check_silent_mode(clirunner, validate_cliresult, check_dir):
     assert errors == EXPECTED_ERRORS
     assert warnings == 0
     assert style == 0
-
-
-def test_check_custom_pattern_absolute_path(
-    clirunner, validate_cliresult, tmpdir_factory
-):
-    project_dir = tmpdir_factory.mktemp("project")
-    project_dir.join("platformio.ini").write(DEFAULT_CONFIG)
-
-    check_dir = tmpdir_factory.mktemp("custom_src_dir")
-    check_dir.join("main.cpp").write(TEST_CODE)
-
-    result = clirunner.invoke(
-        cmd_check, ["--project-dir", str(project_dir), "--pattern=" + str(check_dir)]
-    )
-    validate_cliresult(result)
-
-    errors, warnings, style = count_defects(result.output)
-
-    assert errors == EXPECTED_ERRORS
-    assert warnings == EXPECTED_WARNINGS
-    assert style == EXPECTED_STYLE
-
-
-def test_check_custom_pattern_relative_path(
-    clirunner, validate_cliresult, tmpdir_factory
-):
-    tmpdir = tmpdir_factory.mktemp("project")
-    tmpdir.join("platformio.ini").write(DEFAULT_CONFIG)
-
-    tmpdir.mkdir("app").join("main.cpp").write(TEST_CODE)
-    tmpdir.mkdir("prj").join("test.cpp").write(TEST_CODE)
-
-    result = clirunner.invoke(
-        cmd_check, ["--project-dir", str(tmpdir), "--pattern=app", "--pattern=prj"]
-    )
-    validate_cliresult(result)
-
-    errors, warnings, style = count_defects(result.output)
-
-    assert errors + warnings + style == EXPECTED_DEFECTS * 2
 
 
 def test_check_no_source_files(clirunner, tmpdir):
@@ -385,7 +345,10 @@ def test_check_individual_flags_passed(clirunner, validate_cliresult, tmpdir):
     assert pvs_flags_found
 
 
-def test_check_cppcheck_misra_addon(clirunner, validate_cliresult, check_dir):
+def test_check_cppcheck_misra_addon(clirunner, validate_cliresult, tmpdir_factory):
+    check_dir = tmpdir_factory.mktemp("project")
+    check_dir.join("platformio.ini").write(DEFAULT_CONFIG)
+    check_dir.mkdir("src").join("main.c").write(TEST_CODE)
     check_dir.join("misra.json").write(
         """
 {
@@ -427,7 +390,7 @@ R21.4 text.
 
     validate_cliresult(result)
     assert "R21.3 Found MISRA defect" in result.output
-    assert not isfile(join(str(check_dir), "src", "main.cpp.dump"))
+    assert not os.path.isfile(os.path.join(str(check_dir), "src", "main.cpp.dump"))
 
 
 def test_check_fails_on_defects_only_with_flag(clirunner, validate_cliresult, tmpdir):
@@ -549,15 +512,18 @@ TEST-TEST-TEST-TEST
     assert "license information is incorrect" in verbose_result.output.lower()
 
 
-def test_check_embedded_platform_all_tools(clirunner, validate_cliresult, tmpdir):
-    config = """
+@pytest.mark.parametrize("framework", ["arduino", "stm32cube", "zephyr"])
+@pytest.mark.parametrize("check_tool", ["cppcheck", "clangtidy", "pvs-studio"])
+def test_check_embedded_platform_all_tools(
+    clirunner, validate_cliresult, tmpdir, framework, check_tool
+):
+    config = f"""
 [env:test]
 platform = ststm32
 board = nucleo_f401re
-framework = %s
-check_tool = %s
+framework = {framework}
+check_tool = {check_tool}
 """
-    # tmpdir.join("platformio.ini").write(config)
     tmpdir.mkdir("src").join("main.c").write(
         PVS_STUDIO_FREE_LICENSE_HEADER
         + """
@@ -574,20 +540,21 @@ int main() {
 """
     )
 
-    for framework in (
-        "arduino",
-        "stm32cube",
-        "zephyr",
-    ):
-        for tool in ("cppcheck", "clangtidy", "pvs-studio"):
-            tmpdir.join("platformio.ini").write(config % (framework, tool))
-            result = clirunner.invoke(cmd_check, ["--project-dir", str(tmpdir)])
-            validate_cliresult(result)
-            defects = sum(count_defects(result.output))
-            assert defects > 0, "Failed %s with %s" % (
-                framework,
-                tool,
-            )
+    if framework == "zephyr":
+        zephyr_dir = tmpdir.mkdir("zephyr")
+        zephyr_dir.join("prj.conf").write("# nothing here")
+        zephyr_dir.join("CMakeLists.txt").write(
+            """cmake_minimum_required(VERSION 3.16.0)
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(hello_world)
+target_sources(app PRIVATE ../src/main.c)"""
+        )
+
+    tmpdir.join("platformio.ini").write(config)
+    result = clirunner.invoke(cmd_check, ["--project-dir", str(tmpdir)])
+    validate_cliresult(result)
+    defects = sum(count_defects(result.output))
+    assert defects > 0, "Not defects were found!"
 
 
 def test_check_skip_includes_from_packages(clirunner, validate_cliresult, tmpdir):
@@ -607,10 +574,10 @@ framework = arduino
     validate_cliresult(result)
 
     project_path = fs.to_unix_path(str(tmpdir))
-    for l in result.output.split("\n"):
-        if not l.startswith("Includes:"):
+    for line in result.output.split("\n"):
+        if not line.startswith("Includes:"):
             continue
-        for inc in l.split(" "):
+        for inc in line.split(" "):
             if inc.startswith("-I") and project_path not in inc:
                 pytest.fail("Detected an include path from packages: " + inc)
 
@@ -656,3 +623,229 @@ def test_check_handles_spaces_in_paths(clirunner, validate_cliresult, tmpdir_fac
     default_result = clirunner.invoke(cmd_check, ["--project-dir", str(tmpdir)])
 
     validate_cliresult(default_result)
+
+
+#
+# Files filtering functionality
+#
+
+
+@pytest.mark.parametrize(
+    "src_filter,number_of_checked_files",
+    [
+        (["+<src/app.cpp>"], 1),
+        (["+<tests/*.cpp>"], 1),
+        (["+<src>", "-<src/*.cpp>"], 2),
+        (["-<*> +<src/main.cpp> +<src/uart/uart.cpp> +<src/spi/spi.cpp>"], 3),
+    ],
+    ids=["Single file", "Glob pattern", "Exclude pattern", "Filter as string"],
+)
+def test_check_src_filter(
+    clirunner,
+    validate_cliresult,
+    tmpdir_factory,
+    src_filter,
+    number_of_checked_files,
+):
+    tmpdir = tmpdir_factory.mktemp("project")
+    tmpdir.join("platformio.ini").write(DEFAULT_CONFIG)
+
+    src_dir = tmpdir.mkdir("src")
+    src_dir.join("main.cpp").write(TEST_CODE)
+    src_dir.join("app.cpp").write(TEST_CODE)
+    src_dir.mkdir("uart").join("uart.cpp").write(TEST_CODE)
+    src_dir.mkdir("spi").join("spi.cpp").write(TEST_CODE)
+    tmpdir.mkdir("tests").join("test.cpp").write(TEST_CODE)
+
+    cmd_args = ["--project-dir", str(tmpdir)] + [
+        "--src-filters=%s" % f for f in src_filter
+    ]
+
+    result = clirunner.invoke(cmd_check, cmd_args)
+    validate_cliresult(result)
+
+    errors, warnings, style = count_defects(result.output)
+
+    assert errors + warnings + style == EXPECTED_DEFECTS * number_of_checked_files
+
+
+def test_check_src_filter_from_config(clirunner, validate_cliresult, tmpdir_factory):
+    tmpdir = tmpdir_factory.mktemp("project")
+
+    config = (
+        DEFAULT_CONFIG
+        + """
+check_src_filters =
+    +<src/spi/*.c*>
+    +<tests/test.cpp>
+    """
+    )
+    tmpdir.join("platformio.ini").write(config)
+
+    src_dir = tmpdir.mkdir("src")
+    src_dir.join("main.cpp").write(TEST_CODE)
+    src_dir.mkdir("spi").join("spi.cpp").write(TEST_CODE)
+    tmpdir.mkdir("tests").join("test.cpp").write(TEST_CODE)
+
+    result = clirunner.invoke(cmd_check, ["--project-dir", str(tmpdir)])
+    validate_cliresult(result)
+
+    errors, warnings, style = count_defects(result.output)
+
+    assert errors + warnings + style == EXPECTED_DEFECTS * 2
+    assert "main.cpp" not in result.output
+
+
+def test_check_custom_pattern_absolute_path_legacy(
+    clirunner, validate_cliresult, tmpdir_factory
+):
+    project_dir = tmpdir_factory.mktemp("project")
+    project_dir.join("platformio.ini").write(DEFAULT_CONFIG)
+
+    check_dir = tmpdir_factory.mktemp("custom_src_dir")
+    check_dir.join("main.cpp").write(TEST_CODE)
+
+    result = clirunner.invoke(
+        cmd_check, ["--project-dir", str(project_dir), "--pattern=" + str(check_dir)]
+    )
+
+    validate_cliresult(result)
+
+    errors, warnings, style = count_defects(result.output)
+
+    assert errors == EXPECTED_ERRORS
+    assert warnings == EXPECTED_WARNINGS
+    assert style == EXPECTED_STYLE
+
+
+def test_check_custom_pattern_relative_path_legacy(
+    clirunner, validate_cliresult, tmpdir_factory
+):
+    tmpdir = tmpdir_factory.mktemp("project")
+    tmpdir.join("platformio.ini").write(DEFAULT_CONFIG)
+
+    src_dir = tmpdir.mkdir("src")
+    src_dir.join("main.cpp").write(TEST_CODE)
+    src_dir.mkdir("uart").join("uart.cpp").write(TEST_CODE)
+    src_dir.mkdir("spi").join("spi.cpp").write(TEST_CODE)
+
+    result = clirunner.invoke(
+        cmd_check,
+        ["--project-dir", str(tmpdir), "--pattern=src/uart", "--pattern=src/spi"],
+    )
+    validate_cliresult(result)
+
+    errors, warnings, style = count_defects(result.output)
+
+    assert errors + warnings + style == EXPECTED_DEFECTS * 2
+
+
+def test_check_src_filter_from_config_legacy(
+    clirunner, validate_cliresult, tmpdir_factory
+):
+    tmpdir = tmpdir_factory.mktemp("project")
+
+    config = (
+        DEFAULT_CONFIG
+        + """
+check_patterns =
+    src/spi/*.c*
+    tests/test.cpp
+    """
+    )
+    tmpdir.join("platformio.ini").write(config)
+
+    src_dir = tmpdir.mkdir("src")
+    src_dir.join("main.cpp").write(TEST_CODE)
+    src_dir.mkdir("spi").join("spi.cpp").write(TEST_CODE)
+    tmpdir.mkdir("tests").join("test.cpp").write(TEST_CODE)
+
+    result = clirunner.invoke(cmd_check, ["--project-dir", str(tmpdir)])
+    validate_cliresult(result)
+
+    errors, warnings, style = count_defects(result.output)
+
+    assert errors + warnings + style == EXPECTED_DEFECTS * 2
+    assert "main.cpp" not in result.output
+
+
+def test_check_src_filter_multiple_envs(clirunner, validate_cliresult, tmpdir_factory):
+    tmpdir = tmpdir_factory.mktemp("project")
+
+    config = """
+[env]
+check_tool = cppcheck
+check_src_filters =
+    +<src/*>
+
+[env:check_sources]
+platform = native
+
+[env:check_tests]
+platform = native
+check_src_filters =
+    +<test/*>
+    """
+    tmpdir.join("platformio.ini").write(config)
+
+    src_dir = tmpdir.mkdir("src")
+    src_dir.join("main.cpp").write(TEST_CODE)
+    src_dir.mkdir("spi").join("spi.cpp").write(TEST_CODE)
+    tmpdir.mkdir("test").join("test.cpp").write(TEST_CODE)
+
+    result = clirunner.invoke(
+        cmd_check, ["--project-dir", str(tmpdir), "-e", "check_tests"]
+    )
+    validate_cliresult(result)
+
+    errors, warnings, style = count_defects(result.output)
+
+    assert errors + warnings + style == EXPECTED_DEFECTS
+    assert "test.cpp" in result.output
+    assert "main.cpp" not in result.output
+
+
+def test_check_sources_in_project_root(clirunner, validate_cliresult, tmpdir_factory):
+    tmpdir = tmpdir_factory.mktemp("project")
+
+    config = (
+        """
+[platformio]
+src_dir = ./
+    """
+        + DEFAULT_CONFIG
+    )
+    tmpdir.join("platformio.ini").write(config)
+    tmpdir.join("main.cpp").write(TEST_CODE)
+    tmpdir.mkdir("spi").join("uart.cpp").write(TEST_CODE)
+
+    result = clirunner.invoke(cmd_check, ["--project-dir", str(tmpdir)])
+    validate_cliresult(result)
+
+    errors, warnings, style = count_defects(result.output)
+
+    assert result.exit_code == 0
+    assert errors + warnings + style == EXPECTED_DEFECTS * 2
+
+
+def test_check_sources_in_external_dir(clirunner, validate_cliresult, tmpdir_factory):
+    tmpdir = tmpdir_factory.mktemp("project")
+    external_src_dir = tmpdir_factory.mktemp("external_src_dir")
+
+    config = (
+        f"""
+[platformio]
+src_dir = {external_src_dir}
+    """
+        + DEFAULT_CONFIG
+    )
+    tmpdir.join("platformio.ini").write(config)
+    external_src_dir.join("main.cpp").write(TEST_CODE)
+
+    result = clirunner.invoke(cmd_check, ["--project-dir", str(tmpdir)])
+    validate_cliresult(result)
+
+    errors, warnings, style = count_defects(result.output)
+
+    assert result.exit_code == 0
+    assert errors + warnings + style == EXPECTED_DEFECTS

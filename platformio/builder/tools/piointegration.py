@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import glob
 import os
 
@@ -30,12 +29,7 @@ def IsIntegrationDump(_):
 def DumpIntegrationIncludes(env):
     result = dict(build=[], compatlib=[], toolchain=[])
 
-    result["build"].extend(
-        [
-            env.subst("$PROJECT_INCLUDE_DIR"),
-            env.subst("$PROJECT_SRC_DIR"),
-        ]
-    )
+    # `env`(project) CPPPATH
     result["build"].extend(
         [os.path.abspath(env.subst(item)) for item in env.get("CPPPATH", [])]
     )
@@ -139,9 +133,9 @@ def dump_svd_path(env):
     return None
 
 
-def _subst_cmd(env, cmd):
-    args = env.subst_list(cmd, SCons.Subst.SUBST_CMD)[0]
-    return " ".join([SCons.Subst.quote_spaces(arg) for arg in args])
+def _split_flags_string(env, s):
+    args = env.subst_list(s, SCons.Subst.SUBST_CMD)[0]
+    return [str(arg) for arg in args]
 
 
 def DumpIntegrationData(*args):
@@ -154,8 +148,8 @@ def DumpIntegrationData(*args):
         ],
         "defines": dump_defines(projenv),
         "includes": projenv.DumpIntegrationIncludes(),
-        "cc_flags": _subst_cmd(projenv, "$CFLAGS $CCFLAGS $CPPFLAGS"),
-        "cxx_flags": _subst_cmd(projenv, "$CXXFLAGS $CCFLAGS $CPPFLAGS"),
+        "cc_flags": _split_flags_string(projenv, "$CFLAGS $CCFLAGS $CPPFLAGS"),
+        "cxx_flags": _split_flags_string(projenv, "$CXXFLAGS $CCFLAGS $CPPFLAGS"),
         "cc_path": where_is_program(
             globalenv.subst("$CC"), globalenv.subst("${ENV['PATH']}")
         ),

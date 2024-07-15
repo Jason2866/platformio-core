@@ -22,7 +22,6 @@ from platformio.registry.client import RegistryClient
 
 
 class RegistryFileMirrorIterator:
-
     HTTP_CLIENT_INSTANCES = {}
 
     def __init__(self, download_url):
@@ -55,9 +54,11 @@ class RegistryFileMirrorIterator:
                 "head",
                 self._url_parts.path,
                 allow_redirects=False,
-                params=dict(bypass=",".join(self._visited_mirrors))
-                if self._visited_mirrors
-                else None,
+                params=(
+                    dict(bypass=",".join(self._visited_mirrors))
+                    if self._visited_mirrors
+                    else None
+                ),
                 x_with_authorization=RegistryClient.allowed_private_packages(),
             )
             stop_conditions = [

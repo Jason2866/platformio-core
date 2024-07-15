@@ -35,7 +35,7 @@ from platformio.package.manager._update import PackageManagerUpdateMixin
 from platformio.package.manifest.parser import ManifestParserFactory
 from platformio.package.meta import (
     PackageItem,
-    PackageMetaData,
+    PackageMetadata,
     PackageSpec,
     PackageType,
 )
@@ -199,7 +199,7 @@ class BasePackageManager(  # pylint: disable=too-many-public-methods,too-many-in
 
     def build_metadata(self, pkg_dir, spec, vcs_revision=None):
         manifest = self.load_manifest(pkg_dir)
-        metadata = PackageMetaData(
+        metadata = PackageMetadata(
             type=self.pkg_type,
             name=manifest.get("name"),
             version=manifest.get("version"),
@@ -280,11 +280,15 @@ class BasePackageManager(  # pylint: disable=too-many-public-methods,too-many-in
 
         # external "URL" mismatch
         if spec.external:
-            # local folder mismatch
-            if os.path.abspath(spec.uri) == os.path.abspath(pkg.path) or (
+            # local/symlinked folder mismatch
+            check_conds = [
+                os.path.abspath(spec.uri) == os.path.abspath(pkg.path),
                 spec.uri.startswith("file://")
-                and os.path.abspath(pkg.path) == os.path.abspath(spec.uri[7:])
-            ):
+                and os.path.abspath(pkg.path) == os.path.abspath(spec.uri[7:]),
+                spec.uri.startswith("symlink://")
+                and os.path.abspath(pkg.path) == os.path.abspath(spec.uri[10:]),
+            ]
+            if any(check_conds):
                 return True
             if spec.uri != pkg.metadata.spec.uri:
                 return False

@@ -26,13 +26,13 @@ from platformio.util import strip_ansi_codes
 
 
 class UnityTestRunner(TestRunnerBase):
-
     EXTRA_LIB_DEPS = ["throwtheswitch/Unity@^2.5.2"]
 
-    # Example:
+    # Examples:
     # test/test_foo.cpp:44:test_function_foo:FAIL: Expected 32 Was 33
+    # test/group/test_foo/test_main.cpp:5:test::dummy:FAIL: Expression Evaluated To FALSE
     TESTCASE_PARSE_RE = re.compile(
-        r"(?P<source_file>[^:]+):(?P<source_line>\d+):(?P<name>[^:]+):"
+        r"(?P<source_file>[^:]+):(?P<source_line>\d+):(?P<name>[^\s]+):"
         r"(?P<status>PASS|IGNORE|FAIL)(:\s*(?P<message>.+)$)?"
     )
 
@@ -55,8 +55,8 @@ extern "C"
 
 void unityOutputStart(unsigned long);
 void unityOutputChar(unsigned int);
-void unityOutputFlush();
-void unityOutputComplete();
+void unityOutputFlush(void);
+void unityOutputComplete(void);
 
 #define UNITY_OUTPUT_START()    unityOutputStart((unsigned long) $baudrate)
 #define UNITY_OUTPUT_CHAR(c)    unityOutputChar(c)
@@ -114,7 +114,7 @@ $framework_config_code
         native=dict(
             code="""
 #include <stdio.h>
-void unityOutputStart(unsigned long baudrate) { }
+void unityOutputStart(unsigned long baudrate) { (void) baudrate; }
 void unityOutputChar(unsigned int c) { putchar(c); }
 void unityOutputFlush(void) { fflush(stdout); }
 void unityOutputComplete(void) { }
@@ -155,7 +155,7 @@ void unityOutputComplete(void) { }
         espidf=dict(
             code="""
 #include <stdio.h>
-void unityOutputStart(unsigned long baudrate) { }
+void unityOutputStart(unsigned long baudrate) { (void) baudrate; }
 void unityOutputChar(unsigned int c) { putchar(c); }
 void unityOutputFlush(void) { fflush(stdout); }
 void unityOutputComplete(void) { }
@@ -165,7 +165,7 @@ void unityOutputComplete(void) { }
         zephyr=dict(
             code="""
 #include <sys/printk.h>
-void unityOutputStart(unsigned long baudrate) { }
+void unityOutputStart(unsigned long baudrate) { (void) baudrate; }
 void unityOutputChar(unsigned int c) { printk("%c", c); }
 void unityOutputFlush(void) { }
 void unityOutputComplete(void) { }
@@ -183,10 +183,6 @@ void unityOutputComplete(void) { unittest_uart_end(); }
             language="cpp",
         ),
     )
-
-    def __init__(self, *args, **kwargs):
-        """Delete when Unity > 2.5.2 is released"""
-        super().__init__(*args, **kwargs)
 
     def get_unity_framework_config(self):
         if not self.platform.is_embedded():
@@ -246,18 +242,20 @@ void unityOutputComplete(void) { unittest_uart_end(); }
         unity_h = dst_dir / "unity_config.h"
         if not unity_h.is_file():
             unity_h.write_text(
-                string.Template(self.UNITY_CONFIG_H).substitute(
-                    baudrate=self.get_test_speed()
-                ),
+                string.Template(self.UNITY_CONFIG_H)
+                .substitute(baudrate=self.get_test_speed())
+                .strip()
+                + "\n",
                 encoding="utf8",
             )
         framework_config = self.get_unity_framework_config()
         unity_c = dst_dir / ("unity_config.%s" % framework_config.get("language", "c"))
         if not unity_c.is_file():
             unity_c.write_text(
-                string.Template(self.UNITY_CONFIG_C).substitute(
-                    framework_config_code=framework_config["code"]
-                ),
+                string.Template(self.UNITY_CONFIG_C)
+                .substitute(framework_config_code=framework_config["code"])
+                .strip()
+                + "\n",
                 encoding="utf8",
             )
 
