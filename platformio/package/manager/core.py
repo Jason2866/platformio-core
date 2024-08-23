@@ -42,7 +42,7 @@ def get_core_package_dir(name, spec=None, auto_install=False):
     pm = ToolPackageManager()
     try:
         pkg_dir = pm.get_package(name).path
-    except Exception:
+    except Exception: # pylint: disable=broad-except
         if "tool-scons" in name:
             base_pack_dir = ProjectConfig.get_instance().get("platformio", "packages_dir")
             url = (
