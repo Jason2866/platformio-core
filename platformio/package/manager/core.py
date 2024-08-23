@@ -21,6 +21,7 @@ from platformio import exception
 from platformio.dependencies import get_core_dependencies
 from platformio.package.exception import UnknownPackageError
 from platformio.package.manager.tool import ToolPackageManager
+from platformio.project.config import ProjectConfig
 from platformio.package.meta import PackageSpec
 
 
@@ -43,14 +44,17 @@ def get_core_package_dir(name, spec=None, auto_install=False):
     except:
 # pylint: disable=raise-missing-from
         if "tool-scons" in name:
+            base_pack_dir = ProjectConfig.get_instance().get("platformio", "packages_dir")
+            print("package dir", base_pack_dir)
             url = "https://github.com/pioarduino/scons/releases/download/4.7.0/scons-local-4.7.0.tar.gz"
-            target_path = "/Users/hans/.platformio/packages/scons-local-4.7.0.tar.gz"
+            target_path = join(base_pack_dir, "scons-local-4.7.0.tar.gz")
+            extract_folder = join(base_pack_dir, "tool-scons")
             with request.urlopen(request.Request(url), timeout=15.0) as response:
                 if response.status == 200:
                     with open(target_path, "wb") as f:
                         f.write(response.read())
-            with tarfile.open("/Users/hans/.platformio/packages/scons-local-4.7.0.tar.gz") as tar:
-                tar.extractall("/Users/hans/.platformio/packages/tool-scons")
+            with tarfile.open(target_path) as tar:
+                tar.extractall(extract_folder)
             assert pm.install(name)
             try:
                 pkg_dir = pm.get_package(name).path
