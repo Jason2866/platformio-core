@@ -46,8 +46,10 @@ def get_core_package_dir(name, spec=None, auto_install=False):
 # pylint: disable=raise-missing-from
         if "tool-scons" in name:
             base_pack_dir = ProjectConfig.get_instance().get("platformio", "packages_dir")
-            print("package dir", base_pack_dir)
-            url = "https://github.com/pioarduino/scons/releases/download/4.7.0/scons-local-4.7.0.tar.gz"
+            url = (
+                "https://github.com/pioarduino/scons/"
+                "releases/download/4.7.0/scons-local-4.7.0.tar.gz"
+            )
             target_path = join(base_pack_dir, "scons-local-4.7.0.tar.gz")
             extract_folder = join(base_pack_dir, "tool-scons")
             with request.urlopen(request.Request(url), timeout=15.0) as response:
@@ -60,12 +62,12 @@ def get_core_package_dir(name, spec=None, auto_install=False):
             try:
                 pkg_dir = pm.get_package(name).path
             except:
+# pylint: disable=raise-missing-from
                 raise exception.PlatformioException(
                 "Maybe missing entry(s) in platformio.ini ?\n"
                 "Please add  \"check_tool = cppcheck\" to use code check tool.\n"
                 "In all cases please restart VSC/PlatformIO to try to auto fix issues."
-            )
-# pylint: enable=raise-missing-from
+                )
     return pkg_dir
 
 
