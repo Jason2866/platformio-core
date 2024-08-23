@@ -13,6 +13,9 @@
 # limitations under the License.
 
 import os
+import tarfile
+
+from urllib import request
 
 from platformio import exception
 from platformio.dependencies import get_core_dependencies
@@ -35,15 +38,28 @@ def get_installed_core_packages():
 def get_core_package_dir(name, spec=None, auto_install=False):
     # pylint: disable=unused-argument
     pm = ToolPackageManager()
+    print("pm", pm, "name", name)
     try:
         pkg_dir = pm.get_package(name).path
     except:
+        print("not found")
 # pylint: disable=raise-missing-from
-        raise exception.PlatformioException(
-            "Maybe missing entry(s) in platformio.ini ?\n"
-            "Please add  \"check_tool = cppcheck\" to use code check tool.\n"
-            "In all cases please restart VSC/PlatformIO to try to auto fix issues."
-        )
+    if "tool-scons" in name:
+        url = "https://github.com/pioarduino/scons/releases/download/4.7.0/scons-local-4.7.0.tar.gz"
+        target_path = "/Users/hans/.platformio/packages/scons-local-4.7.0.tar.gz"
+        with request.urlopen(request.Request(url), timeout=15.0) as response:
+            if response.status == 200:
+                print("got file")
+                with open(target_path, "wb") as f:
+                    f.write(response.read())
+        with tarfile.open("/Users/hans/.platformio/packages/scons-local-4.7.0.tar.gz") as tar:
+            tar.extractall("/Users/hans/.platformio/packages/tool-scons")
+        pkg_dir = pm.get_package("tool-scons").path
+#        raise exception.PlatformioException(
+#            "Maybe missing entry(s) in platformio.ini ?\n"
+#            "Please add  \"check_tool = cppcheck\" to use code check tool.\n"
+#            "In all cases please restart VSC/PlatformIO to try to auto fix issues."
+#        )
 # pylint: enable=raise-missing-from
     return pkg_dir
 

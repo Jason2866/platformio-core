@@ -18,6 +18,8 @@ import subprocess
 
 import click
 
+from urllib import request
+
 from platformio import VERSION, __version__, app, exception
 from platformio.dependencies import get_pip_dependencies
 from platformio.http import fetch_remote_content
@@ -113,7 +115,6 @@ def upgrade_pip_dependencies(verbose):
             "--upgrade",
             "pip",
             *get_pip_dependencies(),
-            "https://github.com/pioarduino/scons/releases/download/4.7.0/scons-local-4.7.0.tar.gz",
         ],
         check=True,
         stdout=subprocess.PIPE if not verbose else None,
