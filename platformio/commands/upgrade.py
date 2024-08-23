@@ -18,8 +18,6 @@ import subprocess
 
 import click
 
-from urllib import request
-
 from platformio import VERSION, __version__, app, exception
 from platformio.dependencies import get_pip_dependencies
 from platformio.http import fetch_remote_content
