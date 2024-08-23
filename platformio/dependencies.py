@@ -24,7 +24,6 @@ def get_core_dependencies():
 
 def get_pip_dependencies():
     core = [
-        "https://github.com/pioarduino/scons/releases/download/4.7.0/scons-local-4.7.0.tar.gz",
         "bottle == 0.12.*",
         "click >=8.0.4, <9",
         "colorama",
