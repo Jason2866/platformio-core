@@ -8,7 +8,7 @@ jobs:
       fail-fast: false
       matrix:
         project:
-          - OpenMQTTGateway:
+          - PlatformTest:
             repository: "Jason2866/platform-test"
             folder: "src"
             config_dir: "src"
@@ -18,24 +18,4 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: "recursive"
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.11
-
-      - name: Install PlatformIO
-        run: pip install -U .
-
-      - name: Check out ${{ matrix.project.repository }}
-        uses: actions/checkout@v4
-        with:
-          submodules: "recursive"
-          repository: ${{ matrix.project.repository }}
-          path: ${{ matrix.project.folder }}
-
-      - name: Compile example ${{ matrix.project.repository }}
-        run: |
-          pio run -d ${{ matrix.project.config_dir }} -e ${{ matrix.project.env_name }}
+        
