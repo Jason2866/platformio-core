@@ -44,7 +44,7 @@ def get_core_package_dir(name, spec=None, auto_install=True):
     if name in ("tool-scons") and not os.path.exists(join(base_pack_dir, "tool-scons")):
         url = (
             "https://github.com/pioarduino/scons/releases/"
-            "download/4.7.0/tool-scons.tar.gz"
+            "download/4.8.1/scons-local-4.8.1.tar.gz"
         )
         target_path = join(base_pack_dir, "tool-scons.tar.gz")
         extract_folder = join(base_pack_dir, "tool-scons")
