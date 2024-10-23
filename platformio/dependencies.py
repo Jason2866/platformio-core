@@ -35,6 +35,7 @@ def get_pip_dependencies():
         "tabulate == 0.*",
         "intelhex",  # actual esptool.py requirement
         "argcomplete >=3", # latest esptool.py requirement
+        "PyYAML >=6.0.2", # new Hybrid compile espressif32 platform
     ]
 
     home = [
