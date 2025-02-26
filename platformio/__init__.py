@@ -40,6 +40,5 @@ __pioremote_endpoint__ = "ssl:host=remote.platformio.org:port=4413"
 
 __check_internet_hosts__ = [
     "185.199.110.153",  # Github.com
-    "88.198.170.159",  # platformio.org
     "github.com",
 ] + __registry_mirror_hosts__
