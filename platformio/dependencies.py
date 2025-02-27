@@ -34,7 +34,7 @@ def get_pip_dependencies():
         "semantic_version == 2.10.*",
         "tabulate == 0.*",
         "intelhex",  # actual esptool.py requirement
-        "argcomplete >=3", # latest esptool.py requirement
+        "rich_click", # latest esptool.py requirement
     ]
 
     home = [
