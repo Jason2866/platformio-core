@@ -17,7 +17,6 @@ from platformio.compat import is_proxy_set
 
 def get_core_dependencies():
     return {
-        "contrib-pioremote": "~1.0.0",
         "contrib-piohome": (
             "https://github.com/pioarduino/registry/releases/"
             "download/0.0.1/contrib-piohome-3.4.4.tar.gz"
@@ -26,9 +25,6 @@ def get_core_dependencies():
             "https://github.com/pioarduino/scons/releases/"
             "download/4.8.1/scons-local-4.8.1.tar.gz"
         ),
-        "tool-cppcheck": "~1.21100.0",
-        "tool-clangtidy": "~1.150005.0",
-        "tool-pvs-studio": "~7.18.0",
     }
 
 
@@ -43,6 +39,8 @@ def get_pip_dependencies():
         "requests%s == 2.*" % ("[socks]" if is_proxy_set(socks=True) else ""),
         "semantic_version == 2.10.*",
         "tabulate == 0.*",
+        "intelhex",  # actual esptool.py requirement
+        "rich_click", # latest esptool.py requirement
     ]
 
     home = [
