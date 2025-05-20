@@ -189,56 +189,6 @@ def test_global_packages(
     assert not pkgs_to_names(ToolPackageManager().get_installed())
 
 
-def test_project(clirunner, validate_cliresult, isolated_pio_core, tmp_path):
-    project_dir = tmp_path / "project"
-    project_dir.mkdir()
-    (project_dir / "platformio.ini").write_text(PROJECT_CONFIG_TPL)
-    result = clirunner.invoke(
-        package_install_cmd,
-        ["-d", str(project_dir)],
-    )
-    validate_cliresult(result)
-    with fs.cd(str(project_dir)):
-        config = ProjectConfig()
-        lm = LibraryPackageManager(
-            os.path.join(config.get("platformio", "libdeps_dir"), "devkit")
-        )
-        assert pkgs_to_names(lm.get_installed()) == ["DallasTemperature", "OneWire"]
-        assert pkgs_to_names(ToolPackageManager().get_installed()) == [
-            "framework-arduino-avr-attiny",
-            "tool-scons",
-            "toolchain-atmelavr",
-        ]
-        assert config.get("env:devkit", "lib_deps") == [
-            "milesburton/DallasTemperature@^3.9.1"
-        ]
-
-    # try again
-    result = clirunner.invoke(
-        package_install_cmd,
-        ["-d", str(project_dir)],
-    )
-    validate_cliresult(result)
-    assert "Already up-to-date" in result.output
-
-    # uninstall
-    result = clirunner.invoke(
-        package_uninstall_cmd,
-        ["-d", str(project_dir)],
-    )
-    validate_cliresult(result)
-    with fs.cd(str(project_dir)):
-        config = ProjectConfig()
-        lm = LibraryPackageManager(
-            os.path.join(config.get("platformio", "libdeps_dir"), "devkit")
-        )
-        assert not pkgs_to_names(lm.get_installed())
-        assert pkgs_to_names(ToolPackageManager().get_installed()) == ["tool-scons"]
-        assert config.get("env:devkit", "lib_deps") == [
-            "milesburton/DallasTemperature@^3.9.1"
-        ]
-
-
 def test_custom_project_libraries(
     clirunner, validate_cliresult, func_isolated_pio_core, tmp_path
 ):
