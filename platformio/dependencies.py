@@ -26,6 +26,10 @@ def get_core_dependencies():
             "https://github.com/pioarduino/scons/releases/"
             "download/4.8.1/scons-local-4.8.1.tar.gz"
         ),
+        "tool-python": (
+            "https://github.com/pioarduino/python-portable/releases/"
+            "download/v3.11.7/python-portable.json"
+        ),
         "tool-cppcheck": "~1.21100.0",
         "tool-clangtidy": "~1.150005.0",
         "tool-pvs-studio": "~7.18.0",
