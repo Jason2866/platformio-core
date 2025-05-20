@@ -17,9 +17,15 @@ from platformio.compat import is_proxy_set
 
 def get_core_dependencies():
     return {
-        "contrib-piohome": "~3.4.2",
         "contrib-pioremote": "~1.0.0",
-        "tool-scons": "~4.40801.0",
+        "contrib-piohome": (
+            "https://github.com/pioarduino/registry/releases/"
+            "download/0.0.1/contrib-piohome-3.4.4.tar.gz"
+        ),
+        "tool-scons": (
+            "https://github.com/pioarduino/scons/releases/"
+            "download/4.8.1/scons-local-4.8.1.tar.gz"
+        ),
         "tool-cppcheck": "~1.21100.0",
         "tool-clangtidy": "~1.150005.0",
         "tool-pvs-studio": "~7.18.0",
