@@ -8,6 +8,7 @@ Release Notes
 .. |UNITTESTING| replace:: `Unit Testing <https://docs.platformio.org/en/latest/advanced/unit-testing/index.html>`__
 .. |DEBUGGING| replace:: `Debugging <https://docs.platformio.org/en/latest/plus/debugging.html>`__
 .. |STATICCODEANALYSIS| replace:: `Static Code Analysis <https://docs.platformio.org/en/latest/advanced/static-code-analysis/index.html>`__
+.. |PIOHOME| replace:: `PIO Home <https://docs.platformio.org/en/latest/home/index.html>`__
 
 .. _release_notes_6:
 
@@ -18,8 +19,36 @@ Unlock the true potential of embedded software development with
 PlatformIO's collaborative ecosystem, embracing declarative principles,
 test-driven methodologies, and modern toolchains for unrivaled success.
 
-6.1.16 (2024-??-??)
+6.1.19 (2025-??-??)
 ~~~~~~~~~~~~~~~~~~~
+
+* Fixed a regression issue where custom build flags were not properly reflected in the `compile_commands.json <https://docs.platformio.org/en/latest/integration/compile_commands.html>`__ file, ensuring accurate compilation database generation
+
+6.1.18 (2025-03-11)
+~~~~~~~~~~~~~~~~~~~
+
+* Resolved a regression issue that prevented |PIOHOME| from opening external links (`issue #5084 <https://github.com/platformio/platformio-core/issues/5084>`_)
+
+6.1.17 (2025-02-13)
+~~~~~~~~~~~~~~~~~~~
+
+* Introduced the `PLATFORMIO_RUN_JOBS <https://docs.platformio.org/en/latest/envvars.html#envvar-PLATFORMIO_RUN_JOBS>`__ environment variable, allowing manual override of the number of parallel build jobs (`issue #5077 <https://github.com/platformio/platformio-core/issues/5077>`_)
+* Added support for ``tar.xz`` tarball dependencies (`pull #4974 <https://github.com/platformio/platformio-core/pull/4974>`_)
+* Ensured that dependencies of private libraries are no longer unnecessarily re-installed, optimizing dependency management and reducing redundant operations (`issue #4987 <https://github.com/platformio/platformio-core/issues/4987>`_)
+* Resolved an issue where the ``compiledb`` target failed to properly escape compiler executable paths containing spaces (`issue #4998 <https://github.com/platformio/platformio-core/issues/4998>`_)
+* Resolved an issue with incorrect path resolution when linking static libraries via the `build_flags <https://docs.platformio.org/en/latest/projectconf/sections/env/options/build/build_flags.html>`__ option (`issue #5004 <https://github.com/platformio/platformio-core/issues/5004>`_)
+* Resolved an issue where the ``--project-dir`` flag did not function correctly with the `pio check <https://docs.platformio.org/en/latest/core/userguide/cmd_check.html>`__ and `pio debug <https://docs.platformio.org/en/latest/core/userguide/cmd_debug.html>`__ commands (`issue #5029 <https://github.com/platformio/platformio-core/issues/5029>`_)
+* Resolved an issue where the |LDF| occasionally excluded bundled platform libraries from the dependency graph (`pull #4941 <https://github.com/platformio/platformio-core/pull/4941>`_)
+
+6.1.16 (2024-09-26)
+~~~~~~~~~~~~~~~~~~~
+
+* Added support for Python 3.13
+* Introduced the `PLATFORMIO_SYSTEM_TYPE <https://docs.platformio.org/en/latest/envvars.html#envvar-PLATFORMIO_SYSTEM_TYPE>`__ environment variable, enabling manual override of the detected system type for greater flexibility and control in custom build environments
+* Enhanced internet connection checks by falling back to HTTPS protocol when HTTP (port 80) fails (`issue #4980 <https://github.com/platformio/platformio-core/issues/4980>`_)
+* Upgraded the build engine to the latest version of SCons (4.8.1) to improve build performance, reliability, and compatibility with other tools and systems (`release notes <https://github.com/SCons/scons/releases/tag/4.8.1>`__)
+* Upgraded the `Doctest <https://docs.platformio.org/en/latest/advanced/unit-testing/frameworks/doctest.html>`__ testing framework to version 2.4.11, the `GoogleTest <https://docs.platformio.org/en/latest/advanced/unit-testing/frameworks/doctest.html>`__ to version 1.15.2, and the `Unity <https://docs.platformio.org/en/latest/advanced/unit-testing/frameworks/unity.html>`__ to version 2.6.0, incorporating the latest features and improvements for enhanced testing capabilities
+* Corrected an issue where the incorrect public class was imported for the ``DoctestTestRunner`` (`issue #4949 <https://github.com/platformio/platformio-core/issues/4949>`_)
 
 6.1.15 (2024-04-25)
 ~~~~~~~~~~~~~~~~~~~
@@ -69,7 +98,7 @@ test-driven methodologies, and modern toolchains for unrivaled success.
 ~~~~~~~~~~~~~~~~~~~
 
 * Resolved a possible issue that may cause generated projects for `PlatformIO IDE for VSCode <https://docs.platformio.org/en/latest/integration/ide/vscode.html>`__ to fail to launch a debug session because of a missing "objdump" binary when GDB is not part of the toolchain package
-* Resolved a regression issue that resulted in the malfunction of the Memory Inspection feature within `PIO Home <https://docs.platformio.org/en/latest/home/index.html>`__
+* Resolved a regression issue that resulted in the malfunction of the Memory Inspection feature within |PIOHOME|
 
 6.1.10 (2023-08-11)
 ~~~~~~~~~~~~~~~~~~~

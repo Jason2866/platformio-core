@@ -196,7 +196,7 @@ class PackageOutdatedResult:
 
 
 class PackageSpec:  # pylint: disable=too-many-instance-attributes
-    def __init__(  # pylint: disable=redefined-builtin,too-many-arguments
+    def __init__(  # pylint: disable=redefined-builtin,too-many-arguments,too-many-positional-arguments
         self, raw=None, owner=None, id=None, name=None, requirements=None, uri=None
     ):
         self._requirements = None
@@ -396,7 +396,7 @@ class PackageSpec:  # pylint: disable=too-many-instance-attributes
             parts.path.endswith(".git"),
             # Handle GitHub URL (https://github.com/user/package)
             parts.netloc in ("github.com", "gitlab.com", "bitbucket.com")
-            and not parts.path.endswith((".zip", ".tar.gz")),
+            and not parts.path.endswith((".zip", ".tar.gz", ".tar.xz")),
         ]
         hg_conditions = [
             # Handle Developer Mbed URL

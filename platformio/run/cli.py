@@ -33,9 +33,11 @@ from platformio.test.runners.base import CTX_META_TEST_IS_RUNNING
 # pylint: disable=too-many-arguments,too-many-locals,too-many-branches
 
 try:
-    DEFAULT_JOB_NUMS = cpu_count()
+    SYSTEM_CPU_COUNT = cpu_count()
 except NotImplementedError:
-    DEFAULT_JOB_NUMS = 1
+    SYSTEM_CPU_COUNT = 1
+
+DEFAULT_JOB_NUMS = int(os.getenv("PLATFORMIO_RUN_JOBS", SYSTEM_CPU_COUNT))
 
 
 @click.command("run", short_help="Run project targets (build, upload, clean, etc.)")
@@ -76,7 +78,7 @@ except NotImplementedError:
 @click.option("-s", "--silent", is_flag=True)
 @click.option("-v", "--verbose", is_flag=True)
 @click.pass_context
-def cli(
+def cli(  # pylint: disable=too-many-positional-arguments
     ctx,
     environment,
     target,
@@ -174,7 +176,7 @@ def cli(
     return True
 
 
-def process_env(
+def process_env(  # pylint: disable=too-many-positional-arguments
     ctx,
     name,
     config,

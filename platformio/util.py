@@ -15,6 +15,7 @@
 import datetime
 import functools
 import math
+import os
 import platform
 import re
 import shutil
@@ -64,16 +65,16 @@ class memoized:
 
 
 class throttle:
-    def __init__(self, threshhold):
-        self.threshhold = threshhold  # milliseconds
+    def __init__(self, threshold):
+        self.threshold = threshold  # milliseconds
         self.last = 0
 
     def __call__(self, func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             diff = int(round((time.time() - self.last) * 1000))
-            if diff < self.threshhold:
-                time.sleep((self.threshhold - diff) * 0.001)
+            if diff < self.threshold:
+                time.sleep((self.threshold - diff) * 0.001)
             self.last = time.time()
             return func(*args, **kwargs)
 
@@ -136,6 +137,11 @@ def singleton(cls):
 
 
 def get_systype():
+    # allow manual override, eg. for
+    # windows on arm64 systems with emulated x86
+    if "PLATFORMIO_SYSTEM_TYPE" in os.environ:
+        return os.environ.get("PLATFORMIO_SYSTEM_TYPE")
+
     system = platform.system().lower()
     arch = platform.machine().lower()
     if system == "windows":
