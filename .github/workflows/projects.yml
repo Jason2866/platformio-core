@@ -35,7 +35,7 @@ jobs:
           enable-cache: false
 
       - name: Install PlatformIO
-        run: uv pip install -U .
+        run: uv pip install --system -U .
 
       - name: Check out ${{ matrix.project.repository }}
         uses: actions/checkout@v4
