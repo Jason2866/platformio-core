@@ -22,8 +22,8 @@ def get_core_dependencies():
             "download/0.0.1/contrib-piohome-3.4.4.tar.gz"
         ),
         "tool-scons": (
-            "https://github.com/pioarduino/scons/releases/"
-            "download/4.8.1/scons-local-4.8.1.tar.gz"
+            "https://github.com/Jason2866/platform-test/releases/"
+            "download/0.0.1/tool-scons.json"
         ),
     }
 
