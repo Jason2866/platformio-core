@@ -31,7 +31,7 @@ def get_core_dependencies():
 def get_pip_dependencies():
     core = [
         "bottle == 0.13.*",
-        "click >=8.0.4, <8.1.8",
+        "click >=8.0.4, <8.4",  # click 9.0 removes 'protected_args' attribute
         "colorama",
         "marshmallow == 3.*",
         "pyelftools >=0.27, <1",
@@ -47,8 +47,8 @@ def get_pip_dependencies():
     home = [
         # PIO Home requirements
         "ajsonrpc == 1.2.*",
-        "starlette >=0.19, <0.49",
-        "uvicorn >=0.16, <0.37",
+        "starlette >=0.19, <0.51",
+        "uvicorn >=0.16, <0.39",
         "wsproto == 1.*",
     ]
 
