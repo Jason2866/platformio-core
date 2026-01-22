@@ -160,7 +160,9 @@ class SerialPortFinder:
         if sys.platform == "darwin":
             port_list = [
                 item for item in port_list
-                if not item["port"].endswith(("Bluetooth-Incoming-Port", "wlan-debug", "debug-console"))
+                if not item["port"].endswith(
+                    ("Bluetooth-Incoming-Port", "wlan-debug", "debug-console")
+                )
             ]
         for item in port_list:
             if self.ensure_ready and not is_serial_port_ready(item["port"]):
