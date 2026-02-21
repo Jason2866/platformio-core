@@ -56,9 +56,8 @@ class VCSClientFactory:
             raise VCSBaseException(
                 "VCS: Unknown repository type %s" % remote_url
             ) from exc
-        else:
-            obj.subdir = subdir
-            return obj
+        obj.subdir = subdir
+        return obj
 
     @staticmethod
     def _parse_browse_url(remote_url):
