@@ -428,14 +428,14 @@ class PackageSpec:  # pylint: disable=too-many-instance-attributes
         # Handle browse URLs with subdirectory
         # GitHub/GitLab: /user/repo/tree/branch/subdir
         if parts.netloc in ("github.com", "gitlab.com"):
-        path_parts = [p for p in parts.path.split("/") if p and p != "-"]
-        if len(path_parts) >= 5 and path_parts[2] == "tree":
-            return path_parts[-1]
+            path_parts = [p for p in parts.path.split("/") if p and p != "-"]
+            if len(path_parts) >= 5 and path_parts[2] == "tree":
+                return path_parts[-1]
         # Bitbucket: /user/repo/src/branch/subdir
         elif parts.netloc in ("bitbucket.org", "bitbucket.com"):
             path_parts = [p for p in parts.path.split("/") if p]
             if len(path_parts) >= 5 and path_parts[2] == "src":
-            return path_parts[-1]
+                return path_parts[-1]
 
         # parse real repository name from Github
         if parts.netloc == "github.com" and parts.path.count("/") > 2:
