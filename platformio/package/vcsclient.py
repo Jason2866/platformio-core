@@ -52,21 +52,23 @@ class VCSClientFactory:
                 src_dir, remote_url, tag, silent
             )
             assert isinstance(obj, VCSClientBase)
-            obj.subdir = subdir
-            return obj
         except (KeyError, AssertionError) as exc:
             raise VCSBaseException(
                 "VCS: Unknown repository type %s" % remote_url
             ) from exc
+        else:
+            obj.subdir = subdir
+            return obj
 
     @staticmethod
     def _parse_browse_url(remote_url):
         """Parse subdirectory from VCS hosting browse URLs.
 
-        Supports:
-        - GitHub: https://github.com/user/repo/tree/branch/subdir
-        - GitLab: https://gitlab.com/user/repo/-/tree/branch/subdir
-        - Bitbucket: https://bitbucket.org/user/repo/src/branch/subdir
+        Supports single-level owner/repo paths:
+        - GitHub: https://github.com/owner/repo/tree/branch/subdir
+        - GitLab: https://gitlab.com/owner/repo/-/tree/branch/subdir
+          (nested subgroups like owner/group/repo are not supported)
+        - Bitbucket: https://bitbucket.org/owner/repo/src/branch/subdir
 
         Returns (remote_url, tag, subdir) tuple.
         """
@@ -95,7 +97,10 @@ class VCSClientFactory:
             return remote_url, None, None
 
         tag = rest[1]
-        subdir = "/".join(rest[2:]) if len(rest) > 2 else None
+        subdir_parts = rest[2:]
+        if any(s in ("", ".", "..") for s in subdir_parts):
+            return remote_url, None, None
+        subdir = "/".join(subdir_parts) if subdir_parts else None
         base_url = "%s://%s/%s/%s" % (parts.scheme, parts.netloc, owner, repo)
 
         return base_url, tag, subdir

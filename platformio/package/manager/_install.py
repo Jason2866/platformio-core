@@ -195,7 +195,11 @@ class PackageManagerInstallMixin:
 
             pkg_dir = tmp_dir
             if vcs and vcs.subdir:
-                pkg_dir = os.path.join(tmp_dir, vcs.subdir)
+                pkg_dir = os.path.realpath(os.path.join(tmp_dir, vcs.subdir))
+                if not pkg_dir.startswith(os.path.realpath(tmp_dir) + os.sep):
+                    raise PackageException(
+                        "Invalid subdirectory '%s'" % vcs.subdir
+                    )
                 if not os.path.isdir(pkg_dir):
                     raise PackageException(
                         "Subdirectory '%s' not found in the repository" % vcs.subdir
