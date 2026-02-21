@@ -15,7 +15,7 @@
 import os
 import re
 import subprocess
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from platformio import proc
 from platformio.exception import UserSideException
@@ -96,7 +96,7 @@ class VCSClientFactory:
             return remote_url, None, None
 
         tag = rest[1]
-        subdir_parts = rest[2:]
+        subdir_parts = [unquote(s) for s in rest[2:]]
         if any(s in ("", ".", "..") for s in subdir_parts):
             return remote_url, None, None
         subdir = "/".join(subdir_parts) if subdir_parts else None
