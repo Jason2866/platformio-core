@@ -47,7 +47,8 @@ def tempfile_arg_esc_func(arg):
 
 def long_sources_hook(env, sources):
     _sources = str(sources).replace("\\", "/")
-    if len(str(_sources)) < MAX_LINE_LENGTH:
+    max_len = env.get("_MAXLINELENGTH_EFFECTIVE", MAX_LINE_LENGTH)
+    if len(_sources) < max_len:
         return sources
 
     # fix space in paths
@@ -85,6 +86,7 @@ def generate(env):
     max_len = MAX_LINE_LENGTH
     if IS_WINDOWS and env.get("PIOPLATFORM") in LARGE_SDK_PLATFORMS:
         max_len = MAX_LINE_LENGTH_LARGE_SDK
+    env["_MAXLINELENGTH_EFFECTIVE"] = max_len
     kwargs = dict(
         _long_sources_hook=long_sources_hook,
         TEMPFILE=TempFileMunge,
