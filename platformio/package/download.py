@@ -109,6 +109,22 @@ class FileDownloader:
             self._http_response = None
             raise IOError(str(exc)) from exc
 
+    def _needs_restart(self, downloaded_size):
+        if self._http_response.status_code == 206:
+            content_range = self._http_response.headers.get(
+                "Content-Range", ""
+            )
+            if content_range.startswith("bytes "):
+                try:
+                    range_start = int(
+                        content_range[6:].split("-", 1)[0]
+                    )
+                except (ValueError, IndexError):
+                    range_start = -1
+                return range_start != downloaded_size
+            return True
+        return self._http_response.status_code in (200, 203)
+
     def _stream_with_retry(self, fp):
         max_retries = self.RETRY.total
         downloaded_size = 0
@@ -119,14 +135,15 @@ class FileDownloader:
             )
             try:
                 for chunk in itercontent:
-                    fp.write(chunk)
+                    try:
+                        fp.write(chunk)
+                    except IOError:
+                        self._http_response.close()
+                        raise
                     downloaded_size += len(chunk)
                     yield chunk
                 return
-            except (
-                requests.exceptions.RequestException,
-                IOError,
-            ) as exc:
+            except requests.exceptions.RequestException as exc:
                 self._http_response.close()
                 attempt += 1
                 if attempt >= max_retries:
@@ -137,32 +154,14 @@ class FileDownloader:
                 backoff = self.RETRY.backoff_factor * (2 ** (attempt - 1))
                 time.sleep(backoff)
                 self._request_stream(resume_from=downloaded_size)
-                restart = False
-                if self._http_response.status_code == 206:
-                    content_range = self._http_response.headers.get(
-                        "Content-Range", ""
-                    )
-                    # Expected: "bytes <start>-<end>/<total>"
-                    if content_range.startswith("bytes "):
-                        try:
-                            range_start = int(
-                                content_range[6:].split("-", 1)[0]
-                            )
-                        except (ValueError, IndexError):
-                            range_start = -1
-                        if range_start != downloaded_size:
-                            restart = True
-                    else:
-                        restart = True
-                elif self._http_response.status_code in (200, 203):
-                    restart = True
-                else:
+                if self._http_response.status_code not in (200, 203, 206):
                     raise PackageException(
                         "Got the unrecognized status code '%d' "
                         "when downloading %s"
                         % (self._http_response.status_code, self._url)
                     ) from exc
-                if restart:
+                if self._needs_restart(downloaded_size):
+                    self._request_stream(resume_from=0)
                     fp.seek(0)
                     fp.truncate()
                     downloaded_size = 0
