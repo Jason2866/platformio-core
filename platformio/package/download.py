@@ -162,6 +162,25 @@ class FileDownloader:
                     downloaded_size = 0
                     yield _STREAM_RESET
 
+    @staticmethod
+    def _consume_with_percent(itercontent, file_size, label):
+        click.echo(f"{label} 0%", nl=False)
+        print_percent_step = 10
+        printed_percents = 0
+        downloaded_size = 0
+        for chunk in itercontent:
+            if chunk is _STREAM_RESET:
+                downloaded_size = 0
+                printed_percents = 0
+                continue
+            downloaded_size += len(chunk)
+            if (downloaded_size / file_size * 100) >= (
+                printed_percents + print_percent_step
+            ):
+                printed_percents += print_percent_step
+                click.echo(f" {printed_percents}%", nl=False)
+        click.echo("")
+
     def start(self, with_progress=True, silent=False):
         label = "Downloading"
         file_size = self.get_size()
@@ -177,22 +196,7 @@ class FileDownloader:
                             continue
 
                 elif not is_terminal():
-                    click.echo(f"{label} 0%", nl=False)
-                    print_percent_step = 10
-                    printed_percents = 0
-                    downloaded_size = 0
-                    for chunk in itercontent:
-                        if chunk is _STREAM_RESET:
-                            downloaded_size = 0
-                            printed_percents = 0
-                            continue
-                        downloaded_size += len(chunk)
-                        if (downloaded_size / file_size * 100) >= (
-                            printed_percents + print_percent_step
-                        ):
-                            printed_percents += print_percent_step
-                            click.echo(f" {printed_percents}%", nl=False)
-                    click.echo("")
+                    self._consume_with_percent(itercontent, file_size, label)
 
                 else:
                     with click.progressbar(
