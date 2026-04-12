@@ -19,6 +19,7 @@ from time import mktime
 
 import click
 import requests.adapters
+import requests.exceptions
 from urllib3.util.retry import Retry
 
 from platformio import fs
@@ -32,6 +33,7 @@ class FileDownloader:
         total=5,
         backoff_factor=1,
         status_forcelist=[413, 429, 500, 502, 503, 504],
+        raise_on_status=False,
     )
 
     def __init__(self, url, dest_dir=None):
@@ -41,10 +43,13 @@ class FileDownloader:
         self._http_session.mount("http://", adapter)
         self._http_response = None
         # make connection
-        self._http_response = self._http_session.get(
-            url,
-            stream=True,
-        )
+        try:
+            self._http_response = self._http_session.get(
+                url,
+                stream=True,
+            )
+        except requests.exceptions.RequestException as exc:
+            raise PackageException(str(exc)) from exc
         if self._http_response.status_code not in (200, 203):
             raise PackageException(
                 "Got the unrecognized status code '{0}' when downloaded {1}".format(
