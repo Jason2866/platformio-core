@@ -48,6 +48,7 @@ class FileDownloader:
         self._http_session.mount("http://", adapter)
         self._http_response = None
         self._content_length = -1
+        self._resume_validator = None
         # make connection
         self._request_stream()
         if self._http_response.status_code not in (200, 203):
@@ -60,6 +61,9 @@ class FileDownloader:
             self._content_length = int(
                 self._http_response.headers["content-length"]
             )
+        self._resume_validator = self._http_response.headers.get(
+            "ETag"
+        ) or self._http_response.headers.get("Last-Modified")
 
         disposition = self._http_response.headers.get("content-disposition")
         if disposition and "filename=" in disposition:
@@ -93,6 +97,8 @@ class FileDownloader:
         headers = {}
         if resume_from > 0:
             headers["Range"] = f"bytes={resume_from}-"
+            if self._resume_validator:
+                headers["If-Range"] = self._resume_validator
         try:
             self._http_response = self._http_session.get(
                 self._url,
@@ -101,7 +107,7 @@ class FileDownloader:
             )
         except requests.exceptions.RequestException as exc:
             self._http_response = None
-            raise PackageException(str(exc)) from exc
+            raise IOError(str(exc)) from exc
 
     def _stream_with_retry(self, fp):
         max_retries = self.RETRY.total
@@ -124,7 +130,7 @@ class FileDownloader:
                 self._http_response.close()
                 attempt += 1
                 if attempt >= max_retries:
-                    raise PackageException(
+                    raise IOError(
                         "Download failed after %d retries: %s"
                         % (max_retries, exc)
                     ) from exc
@@ -214,7 +220,8 @@ class FileDownloader:
                                 continue
                             pb.update(len(chunk))
         finally:
-            self._http_response.close()
+            if self._http_response:
+                self._http_response.close()
             self._http_session.close()
 
         if self.get_lmtime():
