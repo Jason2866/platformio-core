@@ -137,7 +137,7 @@ class FileDownloader:
                         "Got the unrecognized status code '%d' "
                         "when downloading %s"
                         % (self._http_response.status_code, self._url)
-                    )
+                    ) from exc
 
     def start(self, with_progress=True, silent=False):
         label = "Downloading"
