@@ -18,6 +18,8 @@ from os.path import getsize, join
 from time import mktime
 
 import click
+import requests.adapters
+from urllib3.util.retry import Retry
 
 from platformio import fs
 from platformio.compat import is_terminal
@@ -26,8 +28,17 @@ from platformio.package.exception import PackageException
 
 
 class FileDownloader:
+    RETRY = Retry(
+        total=5,
+        backoff_factor=1,
+        status_forcelist=[413, 429, 500, 502, 503, 504],
+    )
+
     def __init__(self, url, dest_dir=None):
         self._http_session = HTTPSession()
+        adapter = requests.adapters.HTTPAdapter(max_retries=self.RETRY)
+        self._http_session.mount("https://", adapter)
+        self._http_session.mount("http://", adapter)
         self._http_response = None
         # make connection
         self._http_response = self._http_session.get(
