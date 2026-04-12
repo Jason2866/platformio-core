@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import io
+import time
 from email.utils import parsedate
 from os.path import getsize, join
 from time import mktime
@@ -37,19 +38,14 @@ class FileDownloader:
     )
 
     def __init__(self, url, dest_dir=None):
+        self._url = url
         self._http_session = HTTPSession()
         adapter = requests.adapters.HTTPAdapter(max_retries=self.RETRY)
         self._http_session.mount("https://", adapter)
         self._http_session.mount("http://", adapter)
         self._http_response = None
         # make connection
-        try:
-            self._http_response = self._http_session.get(
-                url,
-                stream=True,
-            )
-        except requests.exceptions.RequestException as exc:
-            raise PackageException(str(exc)) from exc
+        self._request_stream()
         if self._http_response.status_code not in (200, 203):
             raise PackageException(
                 "Got the unrecognized status code '{0}' when downloaded {1}".format(
@@ -85,19 +81,76 @@ class FileDownloader:
             return -1
         return int(self._http_response.headers["content-length"])
 
+    def _request_stream(self, resume_from=0):
+        if self._http_response:
+            self._http_response.close()
+        headers = {}
+        if resume_from > 0:
+            headers["Range"] = f"bytes={resume_from}-"
+        try:
+            self._http_response = self._http_session.get(
+                self._url,
+                stream=True,
+                headers=headers,
+            )
+        except requests.exceptions.RequestException as exc:
+            self._http_response = None
+            raise PackageException(str(exc)) from exc
+
+    def _stream_with_retry(self, fp):
+        max_retries = self.RETRY.total
+        downloaded_size = 0
+        attempt = 0
+        while True:
+            itercontent = self._http_response.iter_content(
+                chunk_size=io.DEFAULT_BUFFER_SIZE
+            )
+            try:
+                for chunk in itercontent:
+                    fp.write(chunk)
+                    downloaded_size += len(chunk)
+                    yield chunk
+                return
+            except (
+                requests.exceptions.RequestException,
+                IOError,
+            ) as exc:
+                self._http_response.close()
+                attempt += 1
+                if attempt >= max_retries:
+                    raise PackageException(
+                        "Download failed after %d retries: %s"
+                        % (max_retries, exc)
+                    ) from exc
+                backoff = self.RETRY.backoff_factor * (2 ** (attempt - 1))
+                time.sleep(backoff)
+                self._request_stream(resume_from=downloaded_size)
+                if self._http_response.status_code == 206:
+                    pass  # server supports range, continue appending
+                elif self._http_response.status_code in (200, 203):
+                    # server restarted from beginning, reset
+                    fp.seek(0)
+                    fp.truncate()
+                    downloaded_size = 0
+                else:
+                    raise PackageException(
+                        "Got the unrecognized status code '%d' "
+                        "when downloading %s"
+                        % (self._http_response.status_code, self._url)
+                    )
+
     def start(self, with_progress=True, silent=False):
         label = "Downloading"
         file_size = self.get_size()
-        itercontent = self._http_response.iter_content(
-            chunk_size=io.DEFAULT_BUFFER_SIZE
-        )
         try:
             with open(self._destination, "wb") as fp:
+                itercontent = self._stream_with_retry(fp)
+
                 if file_size == -1 or not with_progress or silent:
                     if not silent:
                         click.echo(f"{label}...")
-                    for chunk in itercontent:
-                        fp.write(chunk)
+                    for _chunk in itercontent:
+                        pass
 
                 elif not is_terminal():
                     click.echo(f"{label} 0%", nl=False)
@@ -105,7 +158,6 @@ class FileDownloader:
                     printed_percents = 0
                     downloaded_size = 0
                     for chunk in itercontent:
-                        fp.write(chunk)
                         downloaded_size += len(chunk)
                         if (downloaded_size / file_size * 100) >= (
                             printed_percents + print_percent_step
@@ -125,7 +177,6 @@ class FileDownloader:
                     ) as pb:
                         for chunk in pb:
                             pb.update(len(chunk))
-                            fp.write(chunk)
         finally:
             self._http_response.close()
             self._http_session.close()
