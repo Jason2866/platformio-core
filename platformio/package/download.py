@@ -29,6 +29,9 @@ from platformio.http import HTTPSession
 from platformio.package.exception import PackageException
 
 
+_STREAM_RESET = object()
+
+
 class FileDownloader:
     RETRY = Retry(
         total=5,
@@ -44,6 +47,7 @@ class FileDownloader:
         self._http_session.mount("https://", adapter)
         self._http_session.mount("http://", adapter)
         self._http_response = None
+        self._content_length = -1
         # make connection
         self._request_stream()
         if self._http_response.status_code not in (200, 203):
@@ -51,6 +55,10 @@ class FileDownloader:
                 "Got the unrecognized status code '{0}' when downloaded {1}".format(
                     self._http_response.status_code, url
                 )
+            )
+        if "content-length" in self._http_response.headers:
+            self._content_length = int(
+                self._http_response.headers["content-length"]
             )
 
         disposition = self._http_response.headers.get("content-disposition")
@@ -77,9 +85,7 @@ class FileDownloader:
         return self._http_response.headers.get("last-modified")
 
     def get_size(self):
-        if "content-length" not in self._http_response.headers:
-            return -1
-        return int(self._http_response.headers["content-length"])
+        return self._content_length
 
     def _request_stream(self, resume_from=0):
         if self._http_response:
@@ -125,19 +131,36 @@ class FileDownloader:
                 backoff = self.RETRY.backoff_factor * (2 ** (attempt - 1))
                 time.sleep(backoff)
                 self._request_stream(resume_from=downloaded_size)
+                restart = False
                 if self._http_response.status_code == 206:
-                    pass  # server supports range, continue appending
+                    content_range = self._http_response.headers.get(
+                        "Content-Range", ""
+                    )
+                    # Expected: "bytes <start>-<end>/<total>"
+                    if content_range.startswith("bytes "):
+                        try:
+                            range_start = int(
+                                content_range[6:].split("-", 1)[0]
+                            )
+                        except (ValueError, IndexError):
+                            range_start = -1
+                        if range_start != downloaded_size:
+                            restart = True
+                    else:
+                        restart = True
                 elif self._http_response.status_code in (200, 203):
-                    # server restarted from beginning, reset
-                    fp.seek(0)
-                    fp.truncate()
-                    downloaded_size = 0
+                    restart = True
                 else:
                     raise PackageException(
                         "Got the unrecognized status code '%d' "
                         "when downloading %s"
                         % (self._http_response.status_code, self._url)
                     ) from exc
+                if restart:
+                    fp.seek(0)
+                    fp.truncate()
+                    downloaded_size = 0
+                    yield _STREAM_RESET
 
     def start(self, with_progress=True, silent=False):
         label = "Downloading"
@@ -149,8 +172,9 @@ class FileDownloader:
                 if file_size == -1 or not with_progress or silent:
                     if not silent:
                         click.echo(f"{label}...")
-                    for _chunk in itercontent:
-                        pass
+                    for chunk in itercontent:
+                        if chunk is _STREAM_RESET:
+                            continue
 
                 elif not is_terminal():
                     click.echo(f"{label} 0%", nl=False)
@@ -158,6 +182,10 @@ class FileDownloader:
                     printed_percents = 0
                     downloaded_size = 0
                     for chunk in itercontent:
+                        if chunk is _STREAM_RESET:
+                            downloaded_size = 0
+                            printed_percents = 0
+                            continue
                         downloaded_size += len(chunk)
                         if (downloaded_size / file_size * 100) >= (
                             printed_percents + print_percent_step
@@ -176,6 +204,10 @@ class FileDownloader:
                         ),  # every 256Kb or less
                     ) as pb:
                         for chunk in pb:
+                            if chunk is _STREAM_RESET:
+                                pb.pos = 0
+                                pb.finished = False
+                                continue
                             pb.update(len(chunk))
         finally:
             self._http_response.close()
