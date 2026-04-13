@@ -179,6 +179,8 @@ class FileDownloader:
         downloaded_size = 0
         for chunk in itercontent:
             if chunk is _STREAM_RESET:
+                click.echo("")
+                click.echo(f"{label} 0%", nl=False)
                 downloaded_size = 0
                 printed_percents = 0
                 continue
