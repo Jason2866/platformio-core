@@ -57,13 +57,7 @@ class FileDownloader:
                     self._http_response.status_code, url
                 )
             )
-        if "content-length" in self._http_response.headers:
-            self._content_length = int(
-                self._http_response.headers["content-length"]
-            )
-        self._resume_validator = self._http_response.headers.get(
-            "ETag"
-        ) or self._http_response.headers.get("Last-Modified")
+        self._update_response_metadata()
 
         disposition = self._http_response.headers.get("content-disposition")
         if disposition and "filename=" in disposition:
@@ -91,14 +85,22 @@ class FileDownloader:
     def get_size(self):
         return self._content_length
 
+    def _update_response_metadata(self):
+        if "content-length" in self._http_response.headers:
+            self._content_length = int(
+                self._http_response.headers["content-length"]
+            )
+        self._resume_validator = self._http_response.headers.get(
+            "ETag"
+        ) or self._http_response.headers.get("Last-Modified")
+
     def _request_stream(self, resume_from=0):
         if self._http_response:
             self._http_response.close()
         headers = {}
-        if resume_from > 0:
+        if resume_from > 0 and self._resume_validator:
             headers["Range"] = f"bytes={resume_from}-"
-            if self._resume_validator:
-                headers["If-Range"] = self._resume_validator
+            headers["If-Range"] = self._resume_validator
         try:
             self._http_response = self._http_session.get(
                 self._url,
@@ -163,6 +165,7 @@ class FileDownloader:
                 if self._needs_restart(downloaded_size):
                     if self._http_response.status_code == 206:
                         self._request_stream(resume_from=0)
+                    self._update_response_metadata()
                     fp.seek(0)
                     fp.truncate()
                     downloaded_size = 0
