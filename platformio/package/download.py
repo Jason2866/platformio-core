@@ -161,7 +161,8 @@ class FileDownloader:
                         % (self._http_response.status_code, self._url)
                     ) from exc
                 if self._needs_restart(downloaded_size):
-                    self._request_stream(resume_from=0)
+                    if self._http_response.status_code == 206:
+                        self._request_stream(resume_from=0)
                     fp.seek(0)
                     fp.truncate()
                     downloaded_size = 0
