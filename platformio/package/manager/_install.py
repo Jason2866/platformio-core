@@ -107,7 +107,7 @@ class PackageManagerInstallMixin:
                 ),
             )
 
-        if not pkg or not pkg.metadata:
+        if not pkg:
             if spec.external and spec.uri and spec.uri.startswith("file://"):
                 self.log.warning(
                     click.style(
@@ -117,6 +117,7 @@ class PackageManagerInstallMixin:
                     )
                 )
                 return None
+        if not pkg or not pkg.metadata:
             raise PackageException(
                 "Could not install package '%s' for '%s' system"
                 % (spec.humanize(), util.get_systype())
