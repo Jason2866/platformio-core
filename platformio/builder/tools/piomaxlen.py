@@ -28,6 +28,12 @@ from platformio.compat import IS_WINDOWS, hashlib_encode_data
 # We need ~512 characters for compiler and temporary file paths
 MAX_LINE_LENGTH = (8191 if IS_WINDOWS else 131072) - 512
 
+# Platforms with large SDK include/lib lists need a lower threshold on Windows
+# to trigger response file wrapping earlier (e.g. espressif32 with hundreds of
+# -I and -l flags from the Arduino/IDF SDK)
+LARGE_SDK_PLATFORMS = {"espressif32"}
+MAX_LINE_LENGTH_LARGE_SDK = 4096
+
 WINPATHSEP_RE = re.compile(r"\\([^\"'\\]|$)")
 
 
@@ -41,7 +47,8 @@ def tempfile_arg_esc_func(arg):
 
 def long_sources_hook(env, sources):
     _sources = str(sources).replace("\\", "/")
-    if len(str(_sources)) < MAX_LINE_LENGTH:
+    max_len = env.get("_MAXLINELENGTH_EFFECTIVE", MAX_LINE_LENGTH)
+    if len(_sources) < max_len:
         return sources
 
     # fix space in paths
@@ -76,10 +83,14 @@ def exists(env):
 def generate(env):
     if not exists(env):
         return env
+    max_len = MAX_LINE_LENGTH
+    if IS_WINDOWS and env.get("PIOPLATFORM") in LARGE_SDK_PLATFORMS:
+        max_len = MAX_LINE_LENGTH_LARGE_SDK
+    env["_MAXLINELENGTH_EFFECTIVE"] = max_len
     kwargs = dict(
         _long_sources_hook=long_sources_hook,
         TEMPFILE=TempFileMunge,
-        MAXLINELENGTH=MAX_LINE_LENGTH,
+        MAXLINELENGTH=max_len,
         TEMPFILEARGESCFUNC=tempfile_arg_esc_func,
         TEMPFILESUFFIX=".tmp",
         TEMPFILEDIR="$BUILD_DIR",
