@@ -17,12 +17,14 @@ from platformio.compat import is_proxy_set
 
 def get_core_dependencies():
     return {
-        "contrib-piohome": "~3.4.2",
-        "contrib-pioremote": "~1.0.0",
-        "tool-scons": "~4.40801.0",
-        "tool-cppcheck": "~1.21100.0",
-        "tool-clangtidy": "~1.150005.0",
-        "tool-pvs-studio": "~7.18.0",
+        "contrib-piohome": (
+            "https://github.com/pioarduino/registry/releases/"
+            "download/0.0.1/contrib-piohome-3.4.4.tar.gz"
+        ),
+        "tool-scons": (
+            "https://github.com/pioarduino/scons/releases/"
+            "download/4.11.1/scons-local-4.11.1.tar.gz"
+        ),
     }
 
 
@@ -37,21 +39,20 @@ def get_pip_dependencies():
         "requests%s == 2.*" % ("[socks]" if is_proxy_set(socks=True) else ""),
         "semantic_version == 2.10.*",
         "tabulate == 0.*",
+        "certifi",
+        "intelhex",  # actual esptool.py requirement
+        "rich_click", # latest esptool.py requirement
     ]
 
     home = [
         # PIO Home requirements
         "ajsonrpc == 1.2.*",
-        "starlette < 1",
+        "starlette >=1.3.1, <2",
         "uvicorn >=0.16, <0.43",
         "wsproto == 1.*",
     ]
 
     extra = []
-    # issue #4702; Broken "requests/charset_normalizer" on macOS ARM
-    extra.append(
-        'chardet >= 3.0.2,<6; platform_system == "Darwin" and "arm" in platform_machine'
-    )
 
     # issue 4614: urllib3 v2.0 only supports OpenSSL 1.1.1+
     try:

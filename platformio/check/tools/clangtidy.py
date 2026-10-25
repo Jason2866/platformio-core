@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import re
-from os.path import join
 
 from platformio.check.defect import DefectItem
 from platformio.check.tools.base import CheckToolBase
+from platformio.project.config import ProjectConfig
 
 
 class ClangtidyCheckTool(CheckToolBase):
@@ -46,6 +47,11 @@ class ClangtidyCheckTool(CheckToolBase):
         elif category == "warning":
             severity = DefectItem.SEVERITY_MEDIUM
 
+        if defect_id == "clang-diagnostic-error":
+            # Internal ClangTidy error that should be displayed to the user
+            # in verbose mode but not treated as a defect.
+            return raw_line
+
         return DefectItem(severity, category, message, file_, line, column, defect_id)
 
     @staticmethod
@@ -55,7 +61,11 @@ class ClangtidyCheckTool(CheckToolBase):
         return cmd_result["returncode"] < 2
 
     def configure_command(self):
-        tool_path = join(self.get_tool_dir("tool-clangtidy"), "clang-tidy")
+        tool_path = os.path.join(
+            ProjectConfig.get_instance().get("platformio","packages_dir"),
+            "tool-clangtidy",
+            "clang-tidy"
+        )
 
         cmd = [tool_path, "--quiet"]
         flags = self.get_flags("clangtidy")

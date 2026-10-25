@@ -236,6 +236,7 @@ def _install_project_env_libraries(project_env, options):
         private_lm.set_log_level(logging.WARN)
 
     lib_deps = config.get(f"env:{project_env}", "lib_deps")
+
     if "__test" in options.get("project_targets", []):
         test_runner = TestRunnerFactory.new(
             TestSuite(project_env, options.get("piotest_running_name", "*")), config

@@ -497,6 +497,7 @@ class LibBuilderBase:
 
         self.env.PrependUnique(CPPPATH=self.get_include_dirs())
         self.env.ProcessCompileDbToolchainOption()
+        self.env.ProcessCompileDbIncludeToolchainOption()
 
         if self.lib_ldf_mode == "off":
             for lb in self.env.GetLibBuilders():
@@ -1027,7 +1028,9 @@ class ProjectAsLibBuilder(LibBuilderBase):
                 if not pkg:
                     continue
                 for lb in self.env.GetLibBuilders():
-                    if pkg.path != lb.path:
+                    if os.path.normcase(
+                        os.path.realpath(pkg.path)
+                    ) != os.path.normcase(os.path.realpath(lb.path)):
                         continue
                     if lb not in self.depbuilders:
                         self.depend_on(lb, recursive=False)
